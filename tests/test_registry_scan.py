@@ -2,7 +2,8 @@
 # @file    tests/test_registry_scan.py
 # @layer   T0
 # @branch  t0.infra.registry
-# @desc    Тесты генератора реестра: разбор аннотаций, группировка, рендер.
+# @desc    Тесты генератора реестра: разбор аннотаций, план карточек
+# @desc    по исходным файлам, рендер, сверка и очистка на диске.
 
 """Тесты ветви t0.infra.registry (tools/registry_scan.py).
 
@@ -10,7 +11,9 @@
     python -m unittest discover -s tests -t . -v
 """
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from tools import registry_scan as rs
 
@@ -52,6 +55,18 @@ def sample_entry():
         "path": rs.ROOT / "tools" / "sample.py",
         "header": rs.parse_file_header(lines),
         "cards": rs.parse_method_cards(lines),
+    }
+
+
+# @method empty_entry(name) -> dict
+# @in    name: str — имя файла без каталога
+# @out   entry: dict — элемент без ветви и без методов
+# @does  Даёт минимальный элемент для тестов группировки и имён.
+def empty_entry(name):
+    return {
+        "path": rs.ROOT / "tools" / name,
+        "header": {"file": "", "layer": "T0", "branch": "", "desc": []},
+        "cards": [],
     }
 
 
@@ -134,8 +149,8 @@ class TestParseCards(unittest.TestCase):
         self.assertEqual(cards, [])
 
 
-class TestGrouping(unittest.TestCase):
-    """Группировка файлов по ветвям."""
+class TestPlan(unittest.TestCase):
+    """План реестра: ветви и имена файлов карточек."""
 
     # @method test_branch_of_entry() -> None
     # @in    нет
@@ -149,74 +164,164 @@ class TestGrouping(unittest.TestCase):
     # @out   нет
     # @does  Без ветви в шапке элемент попадает в группу no-branch.
     def test_branch_of_empty_header(self):
-        entry = {"path": rs.ROOT / "x.py", "header": {"branch": ""}, "cards": []}
-        self.assertEqual(rs.branch_of(entry), rs.NO_BRANCH)
+        self.assertEqual(rs.branch_of(empty_entry("x.py")), rs.NO_BRANCH)
 
-    # @method test_group_by_branch_two_groups() -> None
+    # @method test_card_name_from_stem() -> None
     # @in    нет
     # @out   нет
-    # @does  Файлы разных ветвей образуют разные группы.
-    def test_group_by_branch_two_groups(self):
-        other = {
-            "path": rs.ROOT / "tools" / "other.py",
-            "header": {"branch": "t0.other", "layer": "T0", "desc": []},
-            "cards": [],
-        }
-        groups = rs.group_by_branch([sample_entry(), other])
-        self.assertEqual(set(groups), {"t0.sample.demo", "t0.other"})
+    # @does  Имя файла карточек строится из имени исходника.
+    def test_card_name_from_stem(self):
+        self.assertEqual(rs.card_name_for(sample_entry(), set()), "sample.md")
+
+    # @method test_card_name_collision_gets_suffix() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Совпадающие имена внутри ветви получают числовой суффикс.
+    def test_card_name_collision_gets_suffix(self):
+        used = set()
+        first = rs.card_name_for(sample_entry(), used)
+        second = rs.card_name_for(empty_entry("sample.py"), used)
+        self.assertEqual(first, "sample.md")
+        self.assertEqual(second, "sample_2.md")
+
+    # @method test_plan_registry_maps_branch_and_card() -> None
+    # @in    нет
+    # @out   нет
+    # @does  План назначает исходнику его ветвь и имя файла карточек.
+    def test_plan_registry_maps_branch_and_card(self):
+        plan = rs.plan_registry([sample_entry()])
+        self.assertEqual(len(plan), 1)
+        self.assertEqual(plan[0]["branch"], "t0.sample.demo")
+        self.assertEqual(plan[0]["card"], "sample.md")
+
+    # @method test_group_plan_by_branch() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Элементы плана разных ветвей образуют разные группы.
+    def test_group_plan_by_branch(self):
+        plan = rs.plan_registry([sample_entry(), empty_entry("x.py")])
+        groups = rs.group_plan_by_branch(plan)
+        self.assertEqual(set(groups), {"t0.sample.demo", rs.NO_BRANCH})
+
+    # @method test_sort_plan_branches_by_layer() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Ветви сортируются по слою, затем по имени.
+    def test_sort_plan_branches_by_layer(self):
+        plan = rs.plan_registry([sample_entry(), empty_entry("x.py")])
+        groups = rs.group_plan_by_branch(plan)
+        self.assertEqual(
+            rs.sort_plan_branches(groups), [rs.NO_BRANCH, "t0.sample.demo"]
+        )
 
 
 class TestRender(unittest.TestCase):
     """Рендер файлов реестра."""
 
-    # @method test_branch_file_contains_cards() -> None
+    # @method test_card_file_contains_cards() -> None
     # @in    нет
     # @out   нет
-    # @does  Файл ветви содержит раздел файла и карточки методов.
-    def test_branch_file_contains_cards(self):
-        text = rs.render_branch_file("t0.sample.demo", [sample_entry()])
-        self.assertIn("## tools/sample.py", text)
+    # @does  Файл карточек содержит шапку с путём исходника и карточки.
+    def test_card_file_contains_cards(self):
+        plan = rs.plan_registry([sample_entry()])
+        text = rs.render_card_file(plan[0])
+        self.assertIn("# Карточки файла tools/sample.py", text)
+        self.assertIn("Ветвь t0.sample.demo", text)
         self.assertIn("### one(a) -> int", text)
         self.assertIn("**вход:** a: int — число", text)
 
-    # @method test_index_lists_branch() -> None
+    # @method test_card_file_without_methods_note() -> None
     # @in    нет
     # @out   нет
-    # @does  Индекс перечисляет ветвь с числом методов и итог.
-    def test_index_lists_branch(self):
-        groups = rs.group_by_branch([sample_entry()])
-        text = rs.render_index(groups)
+    # @does  Файл без методов получает пометку «Методов нет».
+    def test_card_file_without_methods_note(self):
+        plan = rs.plan_registry([empty_entry("empty.py")])
+        text = rs.render_card_file(plan[0])
+        self.assertIn("_Методов нет._", text)
+
+    # @method test_index_lists_branch_with_link() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Индекс перечисляет ветвь, ссылку на карточки и итог.
+    def test_index_lists_branch_with_link(self):
+        plan = rs.plan_registry([sample_entry()])
+        text = rs.render_index(plan)
         self.assertIn("## [T0] t0.sample.demo — методов: 2", text)
+        self.assertIn("(t0.sample.demo/sample.md)", text)
         self.assertIn("**Всего методов: 2**", text)
 
     # @method test_render_all_names() -> None
     # @in    нет
     # @out   нет
-    # @does  Реестр состоит из индекса и по одному файлу на ветвь.
+    # @does  Реестр состоит из индекса и карточек по исходным файлам.
     def test_render_all_names(self):
         files = rs.render_all([sample_entry()])
-        self.assertEqual(set(files), {"METHODS.md", "t0.sample.demo.md"})
+        self.assertEqual(
+            set(files), {"METHODS.md", "t0.sample.demo/sample.md"}
+        )
 
 
 class TestRepositoryScan(unittest.TestCase):
     """Интеграция: сканирование реального репозитория."""
 
-    # @method test_scan_finds_infra_branch() -> None
+    # @method test_scan_finds_card_files() -> None
     # @in    нет
     # @out   нет
-    # @does  Сканер находит ветвь t0.infra.registry в реальном репозитории.
-    def test_scan_finds_infra_branch(self):
+    # @does  Сканер даёт карточки по файлам в каталогах ветвей.
+    def test_scan_finds_card_files(self):
         files = rs.scan_repository()
         self.assertIn("METHODS.md", files)
-        self.assertIn("t0.infra.registry.md", files)
+        self.assertIn("t0.infra.registry/registry_scan.md", files)
+        self.assertIn("t0.uvm.core/uvm_core.md", files)
 
-    # @method test_infra_cards_mention_tools() -> None
+    # @method test_all_cards_in_branch_dirs() -> None
     # @in    нет
     # @out   нет
-    # @does  Карточки ветви инфраструктуры упоминают её инструменты.
-    def test_infra_cards_mention_tools(self):
+    # @does  Кроме индекса все файлы реестра лежат в подкаталогах ветвей.
+    def test_all_cards_in_branch_dirs(self):
         files = rs.scan_repository()
-        self.assertIn("tools/registry_scan.py", files["t0.infra.registry.md"])
+        nested = [name for name in files if name != rs.INDEX_NAME]
+        self.assertTrue(nested)
+        for name in nested:
+            self.assertIn("/", name)
+
+    # @method test_card_file_mentions_source() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Карточки генератора упоминают его исходный файл.
+    def test_card_file_mentions_source(self):
+        files = rs.scan_repository()
+        text = files["t0.infra.registry/registry_scan.md"]
+        self.assertIn("tools/registry_scan.py", text)
+
+
+class TestDisk(unittest.TestCase):
+    """Сверка и запись реестра на диске (во временном каталоге)."""
+
+    # @method test_write_check_and_cleanup() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Запись создаёт подкаталоги ветвей, удаляет лишние файлы и
+    # @does  пустые каталоги; после записи сверка чиста.
+    def test_write_check_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_dir = rs.REGISTRY_DIR
+            rs.REGISTRY_DIR = Path(tmp)
+            try:
+                stale = Path(tmp) / "t0.old.md"
+                stale.write_text("старая раскладка", encoding="utf-8")
+                empty_branch = Path(tmp) / "t0.old"
+                empty_branch.mkdir()
+                files = {"t0.demo/demo.md": "карточки"}
+                problems = rs.check_registry(files)
+                self.assertIn("лишний файл: registry/t0.old.md", problems)
+                rs.write_registry(files)
+                self.assertTrue((Path(tmp) / "t0.demo" / "demo.md").exists())
+                self.assertFalse(stale.exists())
+                self.assertFalse(empty_branch.exists())
+                self.assertEqual(rs.check_registry(files), [])
+            finally:
+                rs.REGISTRY_DIR = old_dir
 
 
 if __name__ == "__main__":
