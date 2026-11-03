@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -16,5 +19,18 @@ jobs:
           python-version: "3.11"
       - name: Проверить лимит строк
         run: python tools/check_limits.py
-      - name: Проверить актуальность реестра методов
+      - name: Регенерировать реестр методов
+        run: python tools/registry_scan.py
+      - name: Закоммитить реестр, если изменился
+        run: |
+          git config user.name "uadro-ci"
+          git config user.email "actions@github.com"
+          git add registry/METHODS.md
+          if git diff --cached --quiet; then
+            echo "Реестр актуален — коммит не нужен"
+          else
+            git commit -m "ci: регенерация реестра методов"
+            git push
+          fi
+      - name: Самопроверка реестра
         run: python tools/registry_scan.py --check
