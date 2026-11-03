@@ -15,4 +15,9 @@
 - tests/__init__.py — Пакет тестов: делает каталог tests импортируемым для unittest.
 - карточки: `registry/t0.infra.tests.md`
 
-**Всего методов: 38**
+## [T0] t0.uvm.core — методов: 16
+
+- tools/uvm_core.py — Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS (SPEC/L0-UVM.md, Этап 1).
+- карточки: `registry/t0.uvm.core.md`
+
+**Всего методов: 54**
