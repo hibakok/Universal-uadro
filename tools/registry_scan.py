@@ -3,9 +3,13 @@
 # @layer   T0
 # @branch  t0.infra.registry
 # @desc    Генератор реестра методов: индекс registry/METHODS.md и карточки
-# @desc    ветвей registry/<ветвь>.md. Режим --check сверяет реестр без записи.
+# @desc    по исходным файлам registry/<ветвь>/<файл>.md. Режим --check
+# @desc    сверяет реестр без записи.
 
-"""Реестр методов репозитория: индекс + карточки по ветвям.
+"""Реестр методов репозитория: индекс + карточки по исходным файлам.
+
+Карточки одного исходного файла живут в registry/<ветвь>/<файл>.md:
+файл карточек не растёт вместе с ветвью и не упирается в лимит строк.
 
 Запуск:
     python tools/registry_scan.py           — записать файлы реестра
@@ -136,26 +140,6 @@ def branch_of(entry):
     return entry["header"]["branch"] or NO_BRANCH
 
 
-# @method group_by_branch(entries) -> dict
-# @in    entries: list[dict] — элементы реестра
-# @out   groups: dict — ветвь -> список элементов в порядке обхода
-# @does  Группирует файлы по ветвям.
-# @depends branch_of
-def group_by_branch(entries):
-    groups = {}
-    for entry in entries:
-        groups.setdefault(branch_of(entry), []).append(entry)
-    return groups
-
-
-# @method sort_branches(groups) -> list
-# @in    groups: dict — ветвь -> список элементов
-# @out   names: list[str] — имена ветвей в стабильном порядке (слой, имя)
-# @does  Даёт стабильный порядок ветвей в реестре.
-def sort_branches(groups):
-    return sorted(groups, key=lambda b: (groups[b][0]["header"]["layer"], b))
-
-
 # @method rel_path(entry) -> str
 # @in    entry: dict — элемент реестра (path, header, cards)
 # @out   rel: str — путь файла относительно корня репозитория
@@ -164,18 +148,69 @@ def rel_path(entry):
     return entry["path"].relative_to(ROOT).as_posix()
 
 
+# @method card_name_for(entry, used) -> str
+# @in    entry: dict — элемент реестра (path, header, cards)
+# @in    used: set[str] — уже занятые имена карточек этой ветви
+# @out   name: str — имя файла карточек, уникальное внутри ветви
+# @does  Строит имя карточек из имени исходника; при совпадении имён
+# @does  внутри ветви добавляет числовой суффикс.
+def card_name_for(entry, used):
+    stem = entry["path"].stem
+    name = stem + ".md"
+    n = 2
+    while name in used:
+        name = f"{stem}_{n}.md"
+        n += 1
+    used.add(name)
+    return name
+
+
+# @method plan_registry(entries) -> list
+# @in    entries: list[dict] — элементы реестра
+# @out   plan: list[dict] — элементы: branch, entry, card (имя файла карточек)
+# @does  Назначает каждому исходнику его ветвь и имя файла карточек.
+# @depends branch_of, card_name_for
+def plan_registry(entries):
+    plan = []
+    used_by_branch = {}
+    for entry in entries:
+        branch = branch_of(entry)
+        used = used_by_branch.setdefault(branch, set())
+        plan.append({"branch": branch, "entry": entry,
+                     "card": card_name_for(entry, used)})
+    return plan
+
+
+# @method group_plan_by_branch(plan) -> dict
+# @in    plan: list[dict] — план реестра
+# @out   groups: dict — ветвь -> элементы плана в порядке обхода
+# @does  Группирует элементы плана по ветвям.
+def group_plan_by_branch(plan):
+    groups = {}
+    for item in plan:
+        groups.setdefault(item["branch"], []).append(item)
+    return groups
+
+
+# @method sort_plan_branches(groups) -> list
+# @in    groups: dict — ветвь -> элементы плана
+# @out   names: list[str] — имена ветвей в стабильном порядке (слой, имя)
+# @does  Даёт стабильный порядок ветвей в индексе реестра.
+def sort_plan_branches(groups):
+    def layer_of(branch):
+        return groups[branch][0]["entry"]["header"]["layer"]
+
+    return sorted(groups, key=lambda b: (layer_of(b), b))
+
+
 # @method render_cards(entry) -> list
 # @in    entry: dict — элемент реестра (path, header, cards)
-# @out   lines: list[str] — markdown-строки: раздел файла с карточками методов
-# @does  Рендерит заголовок файла и карточки его методов.
+# @out   lines: list[str] — markdown-строки: карточки методов файла
+# @does  Рендерит карточки методов; файл без методов даёт пометку.
 def render_cards(entry):
-    lines = [f"## {rel_path(entry)}", ""]
-    if entry["header"]["desc"]:
-        lines.append("_" + " ".join(entry["header"]["desc"]) + "_")
-        lines.append("")
     if not entry["cards"]:
-        lines.append("_Методов нет._")
-        lines.append("")
+        return ["_Методов нет._", ""]
+    lines = []
     for card in entry["cards"]:
         lines.append(f"### {card['name']}")
         lines.append("")
@@ -186,60 +221,58 @@ def render_cards(entry):
     return lines
 
 
-# @method branch_file_name(branch) -> str
-# @in    branch: str — имя ветви
-# @out   name: str — имя файла карточек ветви
-# @does  Преобразует имя ветви в имя файла реестра (ветвь.md).
-def branch_file_name(branch):
-    return branch + ".md"
-
-
-# @method render_branch_file(branch, entries) -> str
-# @in    branch: str — имя ветви
-# @in    entries: list[dict] — файлы ветви
-# @out   text: str — текст файла registry/<ветвь>.md
-# @does  Собирает карточки всех файлов ветви в один файл реестра.
-# @depends render_cards
-def render_branch_file(branch, entries):
-    layer = entries[0]["header"]["layer"] or "?"
-    total = sum(len(entry["cards"]) for entry in entries)
+# @method render_card_file(item) -> str
+# @in    item: dict — элемент плана реестра (branch, entry, card)
+# @out   text: str — текст файла registry/<ветвь>/<файл>.md
+# @does  Собирает карточки одного исходного файла: шапка с ветвью, слоем
+# @does  и описанием, затем карточки методов.
+# @depends rel_path, render_cards
+def render_card_file(item):
+    entry = item["entry"]
+    layer = entry["header"]["layer"] or "?"
     lines = [
-        f"# Карточки ветви {branch}",
+        f"# Карточки файла {rel_path(entry)}",
         "",
-        f"Слой {layer}, методов: {total}. Генерируется"
-        " `tools/registry_scan.py`; вручную не редактировать.",
+        f"Ветвь {item['branch']}, слой {layer}, методов:"
+        f" {len(entry['cards'])}. Генерируется `tools/registry_scan.py`;"
+        " вручную не редактировать.",
         "",
     ]
-    for entry in entries:
-        lines.extend(render_cards(entry))
+    if entry["header"]["desc"]:
+        lines.append("_" + " ".join(entry["header"]["desc"]) + "_")
+        lines.append("")
+    lines.extend(render_cards(entry))
     return "\n".join(lines)
 
 
-# @method render_index(groups) -> str
-# @in    groups: dict — ветвь -> список элементов
+# @method render_index(plan) -> str
+# @in    plan: list[dict] — план реестра: branch, entry, card на исходник
 # @out   text: str — текст индекса registry/METHODS.md
-# @does  Формирует компактный индекс: ветви, их файлы, число методов.
-# @depends sort_branches, rel_path, branch_file_name
-def render_index(groups):
+# @does  Формирует компактный индекс: ветви, их файлы со ссылками на карточки
+# @does  и числом методов, плюс итог по репозиторию.
+# @depends group_plan_by_branch, sort_plan_branches, rel_path
+def render_index(plan):
+    groups = group_plan_by_branch(plan)
     lines = [
         "# Реестр методов — индекс",
         "",
         "Индекс генерируется `tools/registry_scan.py`; вручную не редактировать.",
-        "Карточки методов ветви — в `registry/<ветвь>.md`.",
+        "Карточки методов исходного файла — в `registry/<ветвь>/<файл>.md`.",
         "",
     ]
     total = 0
-    for branch in sort_branches(groups):
-        entries = groups[branch]
-        layer = entries[0]["header"]["layer"] or "?"
-        methods = sum(len(entry["cards"]) for entry in entries)
+    for branch in sort_plan_branches(groups):
+        items = groups[branch]
+        layer = items[0]["entry"]["header"]["layer"] or "?"
+        methods = sum(len(i["entry"]["cards"]) for i in items)
         total += methods
         lines.append(f"## [{layer}] {branch} — методов: {methods}")
         lines.append("")
-        for entry in entries:
+        for item in items:
+            entry = item["entry"]
             desc = " ".join(entry["header"]["desc"]) or "_без описания_"
-            lines.append(f"- {rel_path(entry)} — {desc}")
-        lines.append(f"- карточки: `registry/{branch_file_name(branch)}`")
+            link = f"[{rel_path(entry)}]({branch}/{item['card']})"
+            lines.append(f"- {link} — {desc} — методов: {len(entry['cards'])}")
         lines.append("")
     lines.append(f"**Всего методов: {total}**")
     lines.append("")
@@ -248,14 +281,14 @@ def render_index(groups):
 
 # @method render_all(entries) -> dict
 # @in    entries: list[dict] — элементы реестра
-# @out   files: dict — имя файла -> текст (индекс + карточки ветвей)
+# @out   files: dict — имя файла -> текст (индекс + карточки по файлам)
 # @does  Рендерит весь реестр целиком.
-# @depends group_by_branch, render_index, render_branch_file, branch_file_name
+# @depends plan_registry, render_index, render_card_file
 def render_all(entries):
-    groups = group_by_branch(entries)
-    files = {INDEX_NAME: render_index(groups)}
-    for branch, group in groups.items():
-        files[branch_file_name(branch)] = render_branch_file(branch, group)
+    plan = plan_registry(entries)
+    files = {INDEX_NAME: render_index(plan)}
+    for item in plan:
+        files[f"{item['branch']}/{item['card']}"] = render_card_file(item)
     return files
 
 
@@ -271,7 +304,8 @@ def scan_repository():
 # @method check_registry(files) -> list
 # @in    files: dict — имя файла -> ожидаемый текст
 # @out   problems: list[str] — расхождения (пустой список = реестр актуален)
-# @does  Сверяет ожидаемый реестр с файлами на диске, включая лишние файлы.
+# @does  Сверяет ожидаемый реестр с файлами на диске, включая лишние файлы
+# @does  во всех подкаталогах registry/.
 def check_registry(files):
     problems = []
     for name in sorted(files):
@@ -279,23 +313,42 @@ def check_registry(files):
         actual = path.read_text(encoding="utf-8") if path.exists() else None
         if actual != files[name]:
             problems.append(f"не актуален: registry/{name}")
-    for path in sorted(REGISTRY_DIR.glob("*.md")):
-        if path.name not in files:
-            problems.append(f"лишний файл: registry/{path.name}")
+    for path in sorted(REGISTRY_DIR.rglob("*.md")):
+        rel = path.relative_to(REGISTRY_DIR).as_posix()
+        if rel not in files:
+            problems.append(f"лишний файл: registry/{rel}")
     return problems
+
+
+# @method remove_extra_files(files) -> None
+# @in    files: dict — имя файла -> текст; набор файлов, который должен существовать
+# @out   нет
+# @does  Удаляет в registry/ файлы вне ожидаемого набора и опустевшие
+# @does  подкаталоги ветвей.
+def remove_extra_files(files):
+    for path in sorted(REGISTRY_DIR.rglob("*")):
+        if path.is_file():
+            rel = path.relative_to(REGISTRY_DIR).as_posix()
+            if rel not in files:
+                path.unlink()
+    dirs = [p for p in REGISTRY_DIR.rglob("*") if p.is_dir()]
+    for path in sorted(dirs, key=lambda p: len(p.parts), reverse=True):
+        if not any(path.iterdir()):
+            path.rmdir()
 
 
 # @method write_registry(files) -> None
 # @in    files: dict — имя файла -> текст
 # @out   нет; файлы registry/ перезаписываются, лишние удаляются
-# @does  Записывает реестр на диск.
+# @does  Записывает реестр на диск, создавая подкаталоги ветвей.
+# @depends remove_extra_files
 def write_registry(files):
     REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
-        (REGISTRY_DIR / name).write_text(text, encoding="utf-8")
-    for path in REGISTRY_DIR.glob("*.md"):
-        if path.name not in files:
-            path.unlink()
+        path = REGISTRY_DIR / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    remove_extra_files(files)
 
 
 # @method main(argv) -> int
