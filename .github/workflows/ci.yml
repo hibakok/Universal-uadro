@@ -19,13 +19,15 @@ jobs:
           python-version: "3.11"
       - name: Проверить лимит строк
         run: python tools/check_limits.py
+      - name: Запустить тесты
+        run: python -m unittest discover -s tests -t .
       - name: Регенерировать реестр методов
         run: python tools/registry_scan.py
       - name: Закоммитить реестр, если изменился
         run: |
           git config user.name "uadro-ci"
           git config user.email "actions@github.com"
-          git add registry/METHODS.md
+          git add -A registry/
           if git diff --cached --quiet; then
             echo "Реестр актуален — коммит не нужен"
           else
