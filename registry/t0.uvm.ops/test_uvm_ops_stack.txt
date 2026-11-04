@@ -1,0 +1,71 @@
+КАРТОЧКИ ФАЙЛА tests/test_uvm_ops_stack.py
+
+Ветвь: t0.uvm.ops
+Слой: T0
+Методов: 12
+Генерируется tools/registry_scan.py; вручную не редактировать.
+Описание: Тесты стековых обработчиков: NOP, PUSH, DROP, DUP, SWAP, OVER,
+          ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
+
+МЕТОД test_nop_changes_nothing() -> None
+  вход:        нет
+  выход:       нет
+  функция:     NOP не меняет ни стек, ни PC.
+
+МЕТОД test_push_puts_imm() -> None
+  вход:        нет
+  выход:       нет
+  функция:     PUSH кладёт константу imm вершиной стека.
+
+МЕТОД test_push_keeps_word_range() -> None
+  вход:        нет
+  выход:       нет
+  функция:     PUSH кладёт слово по модулю 2^64.
+
+МЕТОД test_drop_removes_top() -> None
+  вход:        нет
+  выход:       нет
+  функция:     DROP снимает только вершину.
+
+МЕТОД test_drop_empty_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     DROP на пустом стеке — ловушка 2.
+
+МЕТОД test_dup_duplicates_top() -> None
+  вход:        нет
+  выход:       нет
+  функция:     DUP: ( a — a a ).
+
+МЕТОД test_dup_empty_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     DUP на пустом стеке — ловушка 2 (собран из PICK).
+
+МЕТОД test_swap_reorders_pair() -> None
+  вход:        нет
+  выход:       нет
+  функция:     SWAP: ( a b — b a ); глубже лежащие элементы не
+               трогаются.
+
+МЕТОД test_over_copies_second() -> None
+  вход:        нет
+  выход:       нет
+  функция:     OVER: ( a b — a b a ).
+
+МЕТОД test_rot_rotates_triple() -> None
+  вход:        нет
+  выход:       нет
+  функция:     ROT: ( a b c — b c a ).
+
+МЕТОД test_pick_copies_by_depth() -> None
+  вход:        нет
+  выход:       нет
+  функция:     PICK: глубина 0 — вершина (DUP), 3 — четвёртый сверху;
+               стек не укорачивается.
+
+МЕТОД test_pick_out_of_range_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     PICK с глубиной вне стека — ловушка 2: и слишком глубоко,
+               и отрицательная.
