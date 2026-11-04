@@ -2,13 +2,15 @@
 # @file    tests/uvm_testkit.py
 # @layer   T0
 # @branch  t0.infra.tests
-# @desc    Общий тест-набор UVM: компактные машины, снимки стека, чтение
-# @desc    кодов ловушек и остановки для тестов ветвей t0.uvm.*.
+# @desc    Общий тест-набор UVM: компактные машины, снимки стека, сборка
+# @desc    образов программ и чтение кодов ловушек и остановки для тестов
+# @desc    ветвей t0.uvm.*.
 
 """Тест-набор UVM (ветвь t0.infra.tests).
 
 Переиспользуется всеми тестами ветвей t0.uvm.*: компактные машины
-для проверок границ и чтение кодов ловушек и остановки HALT.
+для проверок границ, чтение кодов ловушек и остановки HALT, сборка
+маленьких программных образов для декодера и шага исполнения.
 """
 
 from tools import uvm_core as uc
@@ -60,3 +62,31 @@ def halt_code(action):
     except uc.UvmHalt as exc:
         return exc.code
     raise AssertionError("остановка не поднята")
+
+
+# @method imm64(v) -> bytes
+# @in    v: int — слово (оборачивается по модулю 2^64)
+# @out   raw: bytes — 8 байтов little-endian
+# @does  Кодирует поле imm64 инструкции (SPEC, раздел 4); кирпич сборки
+# @does  тестовых образов для ветвей t0.uvm.decode/exec/run.
+# @depends uc.to_word
+def imm64(v):
+    return uc.to_word(v).to_bytes(8, "little")
+
+
+# @method load_prog(m, parts) -> None
+# @in    m: Machine — состояние машины
+# @in    parts: list — элементы образа: int 0..255 (байт) или bytes
+# @out   нет
+# @does  Собирает элементы в образ, загружает его с адреса 0 и сбрасывает
+# @does  состояние запуска: PC = 0, стеки пусты; кирпич тестов ветвей
+# @does  t0.uvm.decode/exec/run.
+# @depends uc.load_image
+def load_prog(m, parts):
+    image = bytearray()
+    for part in parts:
+        if isinstance(part, int):
+            image.append(part & 0xFF)
+        else:
+            image.extend(part)
+    uc.load_image(m, bytes(image))
