@@ -1,0 +1,61 @@
+КАРТОЧКИ ФАЙЛА tests/test_uvm_ops_sys.py
+
+Ветвь: t0.uvm.ops
+Слой: T0
+Методов: 9
+Генерируется tools/registry_scan.py; вручную не редактировать.
+Описание: Тесты системных вызовов: SYS 0 — чтение байта, SYS 1 — вывод
+          байта, неизвестный SYS (SPEC/L0-UVM.txt, раздел 6).
+
+МЕТОД FakeStream(data)
+  вход:        data: bytes — начальные байты (для заглушки ввода)
+  выход:       fake: FakeStream — поток с полем buffer
+  функция:     Заглушка stdin/stdout: обработчики SYS читают и пишут
+               через поле buffer, как у реальных потоков Python; для
+               stdout — с contextlib.redirect_stdout, для stdin — с
+               patched_stdin.
+
+МЕТОД patched_stdin(stream, action) -> None
+  вход:        stream: FakeStream — заглушка стандартного ввода
+  вход:        action: callable — проверяемое действие
+  выход:       нет
+  функция:     Подменяет sys.stdin на время действия и гарантированно
+               восстанавливает после (в contextlib нет redirect_stdin).
+  использует:  sys.stdin — стандартный ввод хоста (подмена на время
+               действия)
+
+МЕТОД test_sys1_writes_byte() -> None
+  вход:        нет
+  выход:       нет
+  функция:     SYS 1 снимает байт со стека и выводит его в stdout.
+
+МЕТОД test_sys1_writes_low_byte() -> None
+  вход:        нет
+  выход:       нет
+  функция:     SYS 1 выводит c по модулю 256: 321 -> 65 -> "A".
+
+МЕТОД test_sys1_empty_stack_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     SYS 1 с пустым стеком — ловушка 2.
+
+МЕТОД test_sys0_reads_byte() -> None
+  вход:        нет
+  выход:       нет
+  функция:     SYS 0 читает байт из stdin и кладёт его на стек.
+
+МЕТОД test_sys0_reads_sequence_then_eof() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Последовательные SYS 0 читают байты по порядку, за
+               последним — признак конца ввода EOF_WORD.
+
+МЕТОД test_sys0_empty_input_is_eof() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Пустой ввод сразу даёт EOF_WORD.
+
+МЕТОД test_unknown_sys_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     SYS с номером вне 0/1 — ловушка 8.
