@@ -4,7 +4,7 @@
 # @branch  t0.uvm.core
 # @desc    Тесты ядра UVM: слова, ловушки, ОЗУ, стеки DS/RS и загрузка образа.
 
-"""Тесты ветви t0.uvm.core (tools/uvm_core.py) по SPEC/L0-UVM.md.
+"""Тесты ветви t0.uvm.core (tools/uvm_core.py) по SPEC/L0-UVM.txt.
 
 Запуск из корня репозитория:
     python -m unittest discover -s tests -t . -v
