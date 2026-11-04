@@ -15,7 +15,7 @@
 
 ## [T0] t0.uvm.core — методов: 42
 
-- [tools/uvm_core.py](t0.uvm.core/uvm_core.md) — Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS (SPEC/L0-UVM.md, Этап 1). — методов: 16
+- [tools/uvm_core.py](t0.uvm.core/uvm_core.md) — Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS (SPEC/L0-UVM.txt, Этап 1). — методов: 16
 - [tests/test_uvm_core.py](t0.uvm.core/test_uvm_core.md) — Тесты ядра UVM: слова, ловушки, ОЗУ, стеки DS/RS и загрузка образа. — методов: 26
 
 **Всего методов: 90**
