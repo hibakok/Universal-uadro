@@ -1,0 +1,79 @@
+КАРТОЧКИ ФАЙЛА tests/test_uvm_ops_jump.py
+
+Ветвь: t0.uvm.ops
+Слой: T0
+Методов: 14
+Генерируется tools/registry_scan.py; вручную не редактировать.
+Описание: Тесты обработчиков переходов и остановки: JMP, JZ, JNZ, CALL,
+          RET, HALT (SPEC/L0-UVM.txt, разделы 4-5).
+
+МЕТОД test_jmp_sets_pc() -> None
+  вход:        нет
+  выход:       нет
+  функция:     JMP: PC = addr, стек не трогается.
+
+МЕТОД test_jz_jumps_on_zero() -> None
+  вход:        нет
+  выход:       нет
+  функция:     JZ: c = 0 — переход, условие снято со стека.
+
+МЕТОД test_jz_keeps_pc_on_nonzero() -> None
+  вход:        нет
+  выход:       нет
+  функция:     JZ: c не 0 — PC не меняется, условие всё равно снято.
+
+МЕТОД test_jnz_jumps_on_nonzero() -> None
+  вход:        нет
+  выход:       нет
+  функция:     JNZ: c не 0 — переход.
+
+МЕТОД test_jnz_keeps_pc_on_zero() -> None
+  вход:        нет
+  выход:       нет
+  функция:     JNZ: c = 0 — PC не меняется.
+
+МЕТОД test_conditional_jump_empty_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     JZ без условия на стеке — ловушка 2.
+
+МЕТОД test_call_saves_return_and_jumps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     CALL: адрес возврата (текущий PC) — на RS, PC = addr.
+
+МЕТОД test_call_rs_overflow_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     CALL при переполненном RS — ловушка 5.
+
+МЕТОД test_ret_pops_rs_into_pc() -> None
+  вход:        нет
+  выход:       нет
+  функция:     RET: PC <- вершина RS.
+
+МЕТОД test_ret_empty_traps() -> None
+  вход:        нет
+  выход:       нет
+  функция:     RET при пустом RS — ловушка 4.
+
+МЕТОД test_call_ret_roundtrip() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Пара CALL/RET возвращает PC на адрес возврата.
+
+МЕТОД test_halt_raises_with_code() -> None
+  вход:        нет
+  выход:       нет
+  функция:     HALT поднимает UvmHalt с кодом imm.
+
+МЕТОД test_halt_code_mod_256() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Код HALT — imm по модулю 256.
+
+МЕТОД test_halt_is_not_trap() -> None
+  вход:        нет
+  выход:       нет
+  функция:     UvmHalt — не UvmTrap: цикл запуска отличит нормальную
+               остановку от ловушки.
