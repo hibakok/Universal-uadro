@@ -2,7 +2,8 @@
 # @file    tests/test_uvm_core.py
 # @layer   T0
 # @branch  t0.uvm.core
-# @desc    Тесты ядра UVM: слова, ловушки, ОЗУ, стеки DS/RS и загрузка образа.
+# @desc    Тесты ядра UVM: слова, ловушки, остановка, ОЗУ, стеки DS/RS
+# @desc    и загрузка образа.
 
 """Тесты ветви t0.uvm.core (tools/uvm_core.py) по SPEC/L0-UVM.txt.
 
@@ -12,30 +13,8 @@
 
 import unittest
 
+from tests import uvm_testkit as tk
 from tools import uvm_core as uc
-
-
-# @method small(ram_size) -> Machine
-# @in    ram_size: int — размер ОЗУ в байтах (по умолчанию 64)
-# @out   m: Machine — машина с малым ОЗУ и малыми стеками
-# @does  Компактная машина для быстрых тестов границ и переполнений.
-# @depends uc.Machine
-def small(ram_size=64):
-    return uc.Machine(ram_size=ram_size, ds_size=3, rs_size=2)
-
-
-# @method trap_code(action) -> int
-# @in    action: callable — действие, обязанное поднять ловушку
-# @out   code: int — код поднятой ловушки
-# @does  Исполняет действие и возвращает код ловушки; без ловушки — ошибка
-# @does  теста.
-# @depends uc.UvmTrap
-def trap_code(action):
-    try:
-        action()
-    except uc.UvmTrap as exc:
-        return exc.code
-    raise AssertionError("ловушка не поднята")
 
 
 class TestWordBricks(unittest.TestCase):
@@ -58,6 +37,25 @@ class TestWordBricks(unittest.TestCase):
         self.assertEqual(uc.to_byte(0x1FF), 0xFF)
         self.assertEqual(uc.to_byte(256), 0)
         self.assertEqual(uc.to_byte(-2), 0xFE)
+
+    # @method test_to_signed_reads_twos_complement() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Слова читаются как знаковые в дополнительном коде: 5 — 5,
+    # @does  WORD_MASK — -1, 2^63 — -2^63, 2^63+5 — -2^63+5.
+    def test_to_signed_reads_twos_complement(self):
+        self.assertEqual(uc.to_signed(5), 5)
+        self.assertEqual(uc.to_signed(uc.WORD_MASK), -1)
+        self.assertEqual(uc.to_signed(1 << 63), -(1 << 63))
+        self.assertEqual(uc.to_signed((1 << 63) + 5), -(1 << 63) + 5)
+
+    # @method test_to_signed_wraps_input_first() -> None
+    # @in    нет
+    # @out   нет
+    # @does  to_signed сначала оборачивает вход в слово по модулю 2^64.
+    def test_to_signed_wraps_input_first(self):
+        self.assertEqual(uc.to_signed((1 << 64) + 5), 5)
+        self.assertEqual(uc.to_signed(-1), -1)
 
 
 class TestTraps(unittest.TestCase):
@@ -83,6 +81,26 @@ class TestTraps(unittest.TestCase):
             uc.TRAP_OOB, uc.TRAP_BAD_SYS,
         ]
         self.assertEqual(codes, list(range(1, 9)))
+
+
+class TestHalt(unittest.TestCase):
+    """Нормальная остановка HALT (SPEC, раздел 5)."""
+
+    # @method test_halt_carries_code() -> None
+    # @in    нет
+    # @out   нет
+    # @does  UvmHalt несёт код завершения.
+    def test_halt_carries_code(self):
+        exc = uc.UvmHalt(44)
+        self.assertEqual(exc.code, 44)
+
+    # @method test_halt_is_not_trap() -> None
+    # @in    нет
+    # @out   нет
+    # @does  UvmHalt — не UvmTrap: цикл запуска отличит нормальную
+    # @does  остановку от аварийной ловушки.
+    def test_halt_is_not_trap(self):
+        self.assertNotIsInstance(uc.UvmHalt(0), uc.UvmTrap)
 
 
 class TestMachineState(unittest.TestCase):
@@ -118,7 +136,7 @@ class TestRam(unittest.TestCase):
     # @out   нет
     # @does  store_byte пишет, load_byte читает тот же байт.
     def test_byte_roundtrip(self):
-        m = small(16)
+        m = tk.small(16)
         uc.store_byte(m, 0, 255)
         uc.store_byte(m, 15, 1)
         self.assertEqual(uc.load_byte(m, 0), 255)
@@ -129,7 +147,7 @@ class TestRam(unittest.TestCase):
     # @out   нет
     # @does  Примитив записи хранит младший байт значения.
     def test_store_byte_keeps_low_bits(self):
-        m = small(16)
+        m = tk.small(16)
         uc.store_byte(m, 3, 300)
         self.assertEqual(uc.load_byte(m, 3), 44)
 
@@ -138,17 +156,20 @@ class TestRam(unittest.TestCase):
     # @out   нет
     # @does  Обращение вне ОЗУ — ловушка 7 и на чтение, и на запись.
     def test_byte_out_of_ram_traps(self):
-        m = small(16)
-        self.assertEqual(trap_code(lambda: uc.load_byte(m, 16)), uc.TRAP_OOB)
-        self.assertEqual(trap_code(lambda: uc.load_byte(m, -1)), uc.TRAP_OOB)
-        self.assertEqual(trap_code(lambda: uc.store_byte(m, 16, 1)), uc.TRAP_OOB)
+        m = tk.small(16)
+        self.assertEqual(tk.trap_code(lambda: uc.load_byte(m, 16)),
+                         uc.TRAP_OOB)
+        self.assertEqual(tk.trap_code(lambda: uc.load_byte(m, -1)),
+                         uc.TRAP_OOB)
+        self.assertEqual(tk.trap_code(lambda: uc.store_byte(m, 16, 1)),
+                         uc.TRAP_OOB)
 
     # @method test_word_little_endian() -> None
     # @in    нет
     # @out   нет
     # @does  store_word раскладывает слово от младшего байта к старшему.
     def test_word_little_endian(self):
-        m = small(16)
+        m = tk.small(16)
         uc.store_word(m, 0, 0x0102030405060708)
         self.assertEqual(bytes(m.ram[0:8]), bytes([8, 7, 6, 5, 4, 3, 2, 1]))
 
@@ -157,7 +178,7 @@ class TestRam(unittest.TestCase):
     # @out   нет
     # @does  store_word/load_word восстанавливают слово без выравнивания.
     def test_word_roundtrip_unaligned(self):
-        m = small(16)
+        m = tk.small(16)
         for addr in (0, 3, 8):
             uc.store_word(m, addr, 0x1122334455667788)
             self.assertEqual(uc.load_word(m, addr), 0x1122334455667788)
@@ -169,19 +190,21 @@ class TestRam(unittest.TestCase):
     # @out   нет
     # @does  Значение старше 64 бит усекается до младших 64 бит.
     def test_word_beyond_64_bits_wraps(self):
-        m = small(16)
+        m = tk.small(16)
         uc.store_word(m, 0, 1 << 70)
         self.assertEqual(uc.load_word(m, 0), 0)
 
     # @method test_word_out_of_ram_traps() -> None
     # @in    нет
     # @out   нет
-    # @does  Слово, не поместившееся в ОЗУ, — ловушка 7 (границу проверяет
-    # @does  каждый байт-кирпич).
+    # @does  Слово, не поместившееся в ОЗУ, — ловушка 7 (границу
+    # @does  проверяет каждый байт-кирпич).
     def test_word_out_of_ram_traps(self):
-        m = small(8)
-        self.assertEqual(trap_code(lambda: uc.load_word(m, 1)), uc.TRAP_OOB)
-        self.assertEqual(trap_code(lambda: uc.store_word(m, 2, 5)), uc.TRAP_OOB)
+        m = tk.small(8)
+        self.assertEqual(tk.trap_code(lambda: uc.load_word(m, 1)),
+                         uc.TRAP_OOB)
+        self.assertEqual(tk.trap_code(lambda: uc.store_word(m, 2, 5)),
+                         uc.TRAP_OOB)
 
 
 class TestImage(unittest.TestCase):
@@ -192,7 +215,7 @@ class TestImage(unittest.TestCase):
     # @out   нет
     # @does  Образ копируется с адреса 0; PC = 0; DS и RS пусты.
     def test_load_image_copies_and_resets(self):
-        m = small(16)
+        m = tk.small(16)
         m.pc = 9
         m.ds.append(1)
         m.rs.append(2)
@@ -207,8 +230,10 @@ class TestImage(unittest.TestCase):
     # @out   нет
     # @does  Образ больше ОЗУ — ловушка 7.
     def test_load_image_too_big_traps(self):
-        m = small(4)
-        self.assertEqual(trap_code(lambda: uc.load_image(m, b"12345")), uc.TRAP_OOB)
+        m = tk.small(4)
+        self.assertEqual(
+            tk.trap_code(lambda: uc.load_image(m, b"12345")),
+            uc.TRAP_OOB)
 
 
 class TestDataStack(unittest.TestCase):
@@ -219,7 +244,7 @@ class TestDataStack(unittest.TestCase):
     # @out   нет
     # @does  DS работает как LIFO.
     def test_push_pop_lifo(self):
-        m = small()
+        m = tk.small()
         uc.ds_push(m, 1)
         uc.ds_push(m, 2)
         uc.ds_push(m, 3)
@@ -232,7 +257,7 @@ class TestDataStack(unittest.TestCase):
     # @out   нет
     # @does  На DS кладётся слово по модулю 2^64.
     def test_push_wraps_to_64_bits(self):
-        m = small()
+        m = tk.small()
         uc.ds_push(m, (1 << 64) + 5)
         self.assertEqual(uc.ds_pop(m), 5)
         uc.ds_push(m, -1)
@@ -243,27 +268,50 @@ class TestDataStack(unittest.TestCase):
     # @out   нет
     # @does  Снятие с пустого DS — ловушка 2.
     def test_pop_empty_traps(self):
-        m = small()
-        self.assertEqual(trap_code(lambda: uc.ds_pop(m)), uc.TRAP_DS_EMPTY)
+        m = tk.small()
+        self.assertEqual(tk.trap_code(lambda: uc.ds_pop(m)),
+                         uc.TRAP_DS_EMPTY)
 
     # @method test_push_overflow_traps() -> None
     # @in    нет
     # @out   нет
     # @does  Клад сверх ёмкости DS — ловушка 3.
     def test_push_overflow_traps(self):
-        m = small()
+        m = tk.small(ds_size=3)
         uc.ds_push(m, 1)
         uc.ds_push(m, 2)
         uc.ds_push(m, 3)
-        self.assertEqual(trap_code(lambda: uc.ds_push(m, 4)), uc.TRAP_DS_FULL)
+        self.assertEqual(tk.trap_code(lambda: uc.ds_push(m, 4)),
+                         uc.TRAP_DS_FULL)
+
+    # @method test_pop2_returns_operands_in_order() -> None
+    # @in    нет
+    # @out   нет
+    # @does  ds_pop2 даёт (a, b): a — глубже (первый операнд), b —
+    # @does  вершина (второй операнд).
+    def test_pop2_returns_operands_in_order(self):
+        m = tk.small()
+        uc.ds_push(m, 1)
+        uc.ds_push(m, 2)
+        self.assertEqual(uc.ds_pop2(m), (1, 2))
+
+    # @method test_pop2_needs_two_words() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Меньше двух слов на DS — ловушка 2.
+    def test_pop2_needs_two_words(self):
+        m = tk.small()
+        uc.ds_push(m, 1)
+        self.assertEqual(tk.trap_code(lambda: uc.ds_pop2(m)),
+                         uc.TRAP_DS_EMPTY)
 
     # @method test_pick_returns_depth_copy() -> None
     # @in    нет
     # @out   нет
-    # @does  PICK-примитив: глубина 0 — вершина, глубже — старее; копия не
-    # @does  снимается (0 = DUP, 1 = OVER).
+    # @does  PICK-примитив: глубина 0 — вершина, глубже — старее; копия
+    # @does  не снимается (0 = DUP, 1 = OVER).
     def test_pick_returns_depth_copy(self):
-        m = small()
+        m = tk.small()
         uc.ds_push(m, 10)
         uc.ds_push(m, 20)
         uc.ds_push(m, 30)
@@ -277,10 +325,12 @@ class TestDataStack(unittest.TestCase):
     # @out   нет
     # @does  Глубина вне стека — ловушка 2.
     def test_pick_out_of_stack_traps(self):
-        m = small()
+        m = tk.small()
         uc.ds_push(m, 10)
-        self.assertEqual(trap_code(lambda: uc.ds_pick(m, 1)), uc.TRAP_DS_EMPTY)
-        self.assertEqual(trap_code(lambda: uc.ds_pick(m, -1)), uc.TRAP_DS_EMPTY)
+        self.assertEqual(tk.trap_code(lambda: uc.ds_pick(m, 1)),
+                         uc.TRAP_DS_EMPTY)
+        self.assertEqual(tk.trap_code(lambda: uc.ds_pick(m, -1)),
+                         uc.TRAP_DS_EMPTY)
 
 
 class TestReturnStack(unittest.TestCase):
@@ -291,7 +341,7 @@ class TestReturnStack(unittest.TestCase):
     # @out   нет
     # @does  RS работает как LIFO и держит 64-битные слова.
     def test_push_pop_lifo(self):
-        m = small()
+        m = tk.small()
         uc.rs_push(m, 7)
         uc.rs_push(m, (1 << 64) + 1)
         self.assertEqual(uc.rs_pop(m), 1)
@@ -302,18 +352,20 @@ class TestReturnStack(unittest.TestCase):
     # @out   нет
     # @does  Снятие с пустого RS — ловушка 4.
     def test_pop_empty_traps(self):
-        m = small()
-        self.assertEqual(trap_code(lambda: uc.rs_pop(m)), uc.TRAP_RS_EMPTY)
+        m = tk.small()
+        self.assertEqual(tk.trap_code(lambda: uc.rs_pop(m)),
+                         uc.TRAP_RS_EMPTY)
 
     # @method test_push_overflow_traps() -> None
     # @in    нет
     # @out   нет
     # @does  Клад сверх ёмкости RS — ловушка 5.
     def test_push_overflow_traps(self):
-        m = small()
+        m = tk.small(rs_size=2)
         uc.rs_push(m, 1)
         uc.rs_push(m, 2)
-        self.assertEqual(trap_code(lambda: uc.rs_push(m, 3)), uc.TRAP_RS_FULL)
+        self.assertEqual(tk.trap_code(lambda: uc.rs_push(m, 3)),
+                         uc.TRAP_RS_FULL)
 
 
 if __name__ == "__main__":
