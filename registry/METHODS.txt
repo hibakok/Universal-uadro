@@ -1,0 +1,41 @@
+РЕЕСТР МЕТОДОВ — ИНДЕКС
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/<ветвь>/<файл>.txt.
+
+ВЕТВЬ t0.infra.registry [слой T0] — методов: 62
+
+- tools/check_limits.py — методов: 3
+  карточки: registry/t0.infra.registry/check_limits.txt
+  описание: Проверка лимита строк: каждый файл репозитория не длиннее
+            500 строк.
+- tools/registry_scan.py — методов: 24
+  карточки: registry/t0.infra.registry/registry_scan.txt
+  описание: Генератор реестра методов: индекс registry/METHODS.txt и
+            карточки по исходным файлам registry/<ветвь>/<файл>.txt.
+            Режим --check сверяет реестр без записи.
+- tests/test_registry_scan.py — методов: 35
+  карточки: registry/t0.infra.registry/test_registry_scan.txt
+  описание: Тесты генератора реестра: разбор аннотаций, план карточек по
+            исходным файлам, рендер простым текстом, сверка и очистка на
+            диске.
+
+ВЕТВЬ t0.infra.tests [слой T0] — методов: 0
+
+- tests/__init__.py — методов: 0
+  карточки: registry/t0.infra.tests/__init__.txt
+  описание: Пакет тестов: делает каталог tests импортируемым для
+            unittest.
+
+ВЕТВЬ t0.uvm.core [слой T0] — методов: 42
+
+- tools/uvm_core.py — методов: 16
+  карточки: registry/t0.uvm.core/uvm_core.txt
+  описание: Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS
+            (SPEC/L0-UVM.txt, Этап 1).
+- tests/test_uvm_core.py — методов: 26
+  карточки: registry/t0.uvm.core/test_uvm_core.txt
+  описание: Тесты ядра UVM: слова, ловушки, ОЗУ, стеки DS/RS и загрузка
+            образа.
+
+ВСЕГО МЕТОДОВ: 104
