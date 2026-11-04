@@ -46,6 +46,18 @@ def to_byte(x):
     return x & BYTE_MASK
 
 
+# @method to_signed(w) -> int
+# @in    w: int — 64-битное слово без знака (возможно, вне диапазона)
+# @out   s: int — то же значение как знаковое -2^63..2^63-1
+# @does  Читает слово в дополнительном коде до двух; кирпич инструкции
+# @does  SAR и будущих знаковых операций слоя uBrick.
+def to_signed(w):
+    w &= WORD_MASK
+    if w >= (1 << (WORD_BITS - 1)):
+        return w - (1 << WORD_BITS)
+    return w
+
+
 # @method UvmTrap(code)
 # @in    code: int — код завершения-ловушки 1..8 (SPEC, раздел 3)
 # @out   exception — ловушка с полем code
@@ -66,6 +78,21 @@ class UvmTrap(Exception):
 # @depends UvmTrap
 def trap(code):
     raise UvmTrap(code)
+
+
+# @method UvmHalt(code)
+# @in    code: int — код завершения 0..255 (imm инструкции HALT по
+# @in    модулю 256)
+# @out   exception — нормальная остановка с полем code
+# @does  Нормальное завершение по HALT imm (SPEC, раздел 5): в отличие
+# @does  от ловушек UvmTrap ошибкой не является; поднимается обработчиком
+# @does  HALT ветви t0.uvm.ops, ловит цикл ветви t0.uvm.run.
+class UvmHalt(Exception):
+    """Нормальная остановка UVM; поле code — код завершения 0..255."""
+
+    def __init__(self, code):
+        super().__init__(f"остановка {code}")
+        self.code = code
 
 
 # @method Machine(ram_size, ds_size, rs_size)
@@ -191,6 +218,20 @@ def ds_pop(m):
     if not m.ds:
         trap(TRAP_DS_EMPTY)
     return m.ds.pop()
+
+
+# @method ds_pop2(m) -> tuple
+# @in    m: Machine — состояние машины
+# @out   pair: tuple — (a, b): a — глубже, b — вершина
+# @does  Снимает два верхних слова стека данных: a — первый операнд
+# @does  бинарной операции, b — второй; меньше двух слов — ловушка 2.
+# @does  Кирпич бинарных инструкций (STORE8/STORE64, арифметика,
+# @does  сравнения).
+# @depends ds_pop
+def ds_pop2(m):
+    b = ds_pop(m)
+    a = ds_pop(m)
+    return a, b
 
 
 # @method ds_pick(m, depth) -> int
