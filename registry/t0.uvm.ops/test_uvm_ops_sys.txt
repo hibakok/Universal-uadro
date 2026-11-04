@@ -2,27 +2,10 @@
 
 Ветвь: t0.uvm.ops
 Слой: T0
-Методов: 9
+Методов: 7
 Генерируется tools/registry_scan.py; вручную не редактировать.
 Описание: Тесты системных вызовов: SYS 0 — чтение байта, SYS 1 — вывод
           байта, неизвестный SYS (SPEC/L0-UVM.txt, раздел 6).
-
-МЕТОД FakeStream(data)
-  вход:        data: bytes — начальные байты (для заглушки ввода)
-  выход:       fake: FakeStream — поток с полем buffer
-  функция:     Заглушка stdin/stdout: обработчики SYS читают и пишут
-               через поле buffer, как у реальных потоков Python; для
-               stdout — с contextlib.redirect_stdout, для stdin — с
-               patched_stdin.
-
-МЕТОД patched_stdin(stream, action) -> None
-  вход:        stream: FakeStream — заглушка стандартного ввода
-  вход:        action: callable — проверяемое действие
-  выход:       нет
-  функция:     Подменяет sys.stdin на время действия и гарантированно
-               восстанавливает после (в contextlib нет redirect_stdin).
-  использует:  sys.stdin — стандартный ввод хоста (подмена на время
-               действия)
 
 МЕТОД test_sys1_writes_byte() -> None
   вход:        нет
