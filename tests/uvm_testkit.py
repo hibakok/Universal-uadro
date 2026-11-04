@@ -3,16 +3,27 @@
 # @layer   T0
 # @branch  t0.infra.tests
 # @desc    Общий тест-набор UVM: компактные машины, снимки стека, сборка
-# @desc    образов программ и чтение кодов ловушек и остановки для тестов
-# @desc    ветвей t0.uvm.*.
+# @desc    образов программ (в машину и байтами в файл), чтение кодов
+# @desc    ловушек и остановки, заглушки потоков хоста и прогон образов
+# @desc    через cli — для тестов ветвей t0.uvm.*.
 
 """Тест-набор UVM (ветвь t0.infra.tests).
 
 Переиспользуется всеми тестами ветвей t0.uvm.*: компактные машины
 для проверок границ, чтение кодов ловушек и остановки HALT, сборка
-маленьких программных образов для декодера и шага исполнения.
+образов (load_prog — сразу в машину, image_of/image_file — байтами,
+в том числе в файл для ветви t0.uvm.cli), заглушки stdin/stdout
+с полем buffer — как у реальных потоков Python, и run_via_cli —
+полный прогон образа через командный запуск.
 """
 
+import contextlib
+import io
+import os
+import sys
+import tempfile
+
+from tools import uvm_cli
 from tools import uvm_core as uc
 
 
@@ -68,25 +79,98 @@ def halt_code(action):
 # @in    v: int — слово (оборачивается по модулю 2^64)
 # @out   raw: bytes — 8 байтов little-endian
 # @does  Кодирует поле imm64 инструкции (SPEC, раздел 4); кирпич сборки
-# @does  тестовых образов для ветвей t0.uvm.decode/exec/run.
+# @does  тестовых образов для ветвей t0.uvm.*.
 # @depends uc.to_word
 def imm64(v):
     return uc.to_word(v).to_bytes(8, "little")
 
 
-# @method load_prog(m, parts) -> None
-# @in    m: Machine — состояние машины
+# @method image_of(parts) -> bytes
 # @in    parts: list — элементы образа: int 0..255 (байт) или bytes
-# @out   нет
-# @does  Собирает элементы в образ, загружает его с адреса 0 и сбрасывает
-# @does  состояние запуска: PC = 0, стеки пусты; кирпич тестов ветвей
-# @does  t0.uvm.decode/exec/run.
-# @depends uc.load_image
-def load_prog(m, parts):
+# @out   image: bytes — образ программы
+# @does  Собирает элементы в один образ байтов; кирпич тестов ветвей
+# @does  t0.uvm.cli и t0.uvm.integration (запись образа в файл).
+def image_of(parts):
     image = bytearray()
     for part in parts:
         if isinstance(part, int):
             image.append(part & 0xFF)
         else:
             image.extend(part)
-    uc.load_image(m, bytes(image))
+    return bytes(image)
+
+
+# @method image_file(image) -> contextmanager
+# @in    image: bytes — образ программы
+# @out   cm: contextmanager — выдаёт путь к временному файлу с образом
+# @does  Записывает образ во временный файл; путь действует внутри
+# @does  with, файл и каталог удаляются на выходе; кирпич тестов
+# @does  ветвей t0.uvm.cli и t0.uvm.integration.
+# @uses  tempfile — временный каталог теста
+@contextlib.contextmanager
+def image_file(image):
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "prog.uvm")
+        with open(path, "wb") as handle:
+            handle.write(image)
+        yield path
+
+
+# @method load_prog(m, parts) -> None
+# @in    m: Machine — состояние машины
+# @in    parts: list — элементы образа: int 0..255 (байт) или bytes
+# @out   нет
+# @does  Собирает элементы в образ (image_of), загружает его с адреса 0
+# @does  и сбрасывает состояние запуска: PC = 0, стеки пусты; кирпич
+# @does  тестов ветвей t0.uvm.decode/exec/run.
+# @depends uc.load_image, image_of
+def load_prog(m, parts):
+    uc.load_image(m, image_of(parts))
+
+
+# @method FakeStream(data)
+# @in    data: bytes — начальные байты (для заглушки ввода)
+# @out   fake: FakeStream — поток с полем buffer
+# @does  Заглушка stdin/stdout: обработчики SYS читают и пишут через
+# @does  поле buffer, как у реальных потоков Python; для stdout —
+# @does  с contextlib.redirect_stdout, для stdin — с patched_stdin.
+class FakeStream:
+    """Заглушка стандартного потока: buffer — BytesIO."""
+
+    def __init__(self, data=b""):
+        self.buffer = io.BytesIO(data)
+
+
+# @method patched_stdin(stream, action) -> None
+# @in    stream: FakeStream — заглушка стандартного ввода
+# @in    action: callable — проверяемое действие
+# @out   нет
+# @does  Подменяет sys.stdin на время действия и гарантированно
+# @does  восстанавливает после (в contextlib нет redirect_stdin).
+# @uses  sys.stdin — стандартный ввод хоста (подмена на время действия)
+def patched_stdin(stream, action):
+    saved = sys.stdin
+    sys.stdin = stream
+    try:
+        action()
+    finally:
+        sys.stdin = saved
+
+
+# @method run_via_cli(image, args) -> tuple
+# @in    image: bytes — образ программы
+# @in    args: list — дополнительные аргументы после пути (по умолчанию
+# @in    пусто)
+# @out   code: int — код завершения cli.main
+# @out   out: bytes — байты, выведенные программой в stdout
+# @does  Полный прогон образа через командный запуск: временный файл
+# @does  (image_file), cli.main с подменённым stdout (FakeStream);
+# @does  кирпич тестов ветвей t0.uvm.cli и t0.uvm.integration.
+# @depends image_file, FakeStream, uvm_cli.main
+# @uses  sys.stdout — стандартный вывод хоста (подмена на время прогона)
+def run_via_cli(image, args=()):
+    out = FakeStream()
+    with image_file(image) as path:
+        with contextlib.redirect_stdout(out):
+            code = uvm_cli.main([path] + list(args))
+    return code, out.buffer.getvalue()
