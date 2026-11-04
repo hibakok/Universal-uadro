@@ -2,11 +2,11 @@
 # @file    tools/uvm_core.py
 # @layer   T0
 # @branch  t0.uvm.core
-# @desc    Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS (SPEC/L0-UVM.md, Этап 1).
+# @desc    Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS (SPEC/L0-UVM.txt, Этап 1).
 
 """Ядро виртуальной машины UVM v0.1 (ветвь t0.uvm.core).
 
-Здесь живут только кирпичи состояния по SPEC/L0-UVM.md: слова, ловушки,
+Здесь живут только кирпичи состоянпо ия SPEC/L0-UVM.md: слова, ловушки,
 ОЗУ, стеки DS/RS и загрузка образа. Исполнение инструкций — следующие
 ветви Этапа 1: t0.uvm.ops, t0.uvm.table, t0.uvm.decode, t0.uvm.exec,
 t0.uvm.run, t0.uvm.cli.
