@@ -42,11 +42,15 @@
   описание: Тесты ядра UVM: слова, ловушки, остановка, ОЗУ, стеки DS/RS
             и загрузка образа.
 
-ВЕТВЬ t0.uvm.ops [слой T0] — методов: 8
+ВЕТВЬ t0.uvm.ops [слой T0] — методов: 12
 
+- tools/uvm_ops_mem.py — методов: 4
+  карточки: registry/t0.uvm.ops/uvm_ops_mem.txt
+  описание: Обработчики опкодов группы «память»: LOAD8, LOAD64, STORE8,
+            STORE64 (SPEC/L0-UVM.txt, раздел 5).
 - tools/uvm_ops_stack.py — методов: 8
   карточки: registry/t0.uvm.ops/uvm_ops_stack.txt
   описание: Обработчики опкодов группы «стек»: NOP, PUSH, DROP, DUP,
             SWAP, OVER, ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
 
-ВСЕГО МЕТОДОВ: 123
+ВСЕГО МЕТОДОВ: 127
