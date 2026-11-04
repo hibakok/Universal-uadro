@@ -42,7 +42,7 @@
   описание: Тесты ядра UVM: слова, ловушки, остановка, ОЗУ, стеки DS/RS
             и загрузка образа.
 
-ВЕТВЬ t0.uvm.ops [слой T0] — методов: 33
+ВЕТВЬ t0.uvm.ops [слой T0] — методов: 39
 
 - tools/uvm_ops_arith.py — методов: 14
   карточки: registry/t0.uvm.ops/uvm_ops_arith.txt
@@ -53,6 +53,10 @@
   карточки: registry/t0.uvm.ops/uvm_ops_cmp.txt
   описание: Обработчики опкодов группы «сравнения»: EQ, NEQ, LTU, GTU,
             LEU, GEU (SPEC/L0-UVM.txt, раздел 5).
+- tools/uvm_ops_jump.py — методов: 6
+  карточки: registry/t0.uvm.ops/uvm_ops_jump.txt
+  описание: Обработчики опкодов группы «переходы и остановка»: JMP, JZ,
+            JNZ, CALL, RET, HALT (SPEC/L0-UVM.txt, разделы 4-5).
 - tools/uvm_ops_mem.py — методов: 4
   карточки: registry/t0.uvm.ops/uvm_ops_mem.txt
   описание: Обработчики опкодов группы «память»: LOAD8, LOAD64, STORE8,
@@ -62,4 +66,4 @@
   описание: Обработчики опкодов группы «стек»: NOP, PUSH, DROP, DUP,
             SWAP, OVER, ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
 
-ВСЕГО МЕТОДОВ: 148
+ВСЕГО МЕТОДОВ: 154
