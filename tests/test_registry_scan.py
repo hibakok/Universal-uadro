@@ -3,7 +3,8 @@
 # @layer   T0
 # @branch  t0.infra.registry
 # @desc    Тесты генератора реестра: разбор аннотаций, план карточек
-# @desc    по исходным файлам, рендер, сверка и очистка на диске.
+# @desc    по исходным файлам, рендер простым текстом, сверка и очистка
+# @desc    на диске.
 
 """Тесты ветви t0.infra.registry (tools/registry_scan.py).
 
@@ -169,9 +170,9 @@ class TestPlan(unittest.TestCase):
     # @method test_card_name_from_stem() -> None
     # @in    нет
     # @out   нет
-    # @does  Имя файла карточек строится из имени исходника.
+    # @does  Имя файла карточек строится из имени исходника с .txt.
     def test_card_name_from_stem(self):
-        self.assertEqual(rs.card_name_for(sample_entry(), set()), "sample.md")
+        self.assertEqual(rs.card_name_for(sample_entry(), set()), "sample.txt")
 
     # @method test_card_name_collision_gets_suffix() -> None
     # @in    нет
@@ -181,8 +182,8 @@ class TestPlan(unittest.TestCase):
         used = set()
         first = rs.card_name_for(sample_entry(), used)
         second = rs.card_name_for(empty_entry("sample.py"), used)
-        self.assertEqual(first, "sample.md")
-        self.assertEqual(second, "sample_2.md")
+        self.assertEqual(first, "sample.txt")
+        self.assertEqual(second, "sample_2.txt")
 
     # @method test_plan_registry_maps_branch_and_card() -> None
     # @in    нет
@@ -192,7 +193,7 @@ class TestPlan(unittest.TestCase):
         plan = rs.plan_registry([sample_entry()])
         self.assertEqual(len(plan), 1)
         self.assertEqual(plan[0]["branch"], "t0.sample.demo")
-        self.assertEqual(plan[0]["card"], "sample.md")
+        self.assertEqual(plan[0]["card"], "sample.txt")
 
     # @method test_group_plan_by_branch() -> None
     # @in    нет
@@ -215,6 +216,104 @@ class TestPlan(unittest.TestCase):
         )
 
 
+class TestWrapWords(unittest.TestCase):
+    """Перенос текста по словам."""
+
+    # @method test_short_text_stays_single_line() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Текст короче ширины не переносится.
+    def test_short_text_stays_single_line(self):
+        self.assertEqual(rs.wrap_words("короткий текст", 40), ["короткий текст"])
+
+    # @method test_words_wrap_at_width() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Слова переносятся так, что строки не шире границы.
+    def test_words_wrap_at_width(self):
+        self.assertEqual(rs.wrap_words("ааа ббб ввв", 7), ["ааа ббб", "ввв"])
+        self.assertEqual(rs.wrap_words("ааа ббб ввв", 11), ["ааа ббб ввв"])
+
+    # @method test_long_word_owns_line() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Слово длиннее ширины занимает строку целиком.
+    def test_long_word_owns_line(self):
+        self.assertEqual(
+            rs.wrap_words("а длинноещёдлиннее б", 5),
+            ["а", "длинноещёдлиннее", "б"],
+        )
+
+    # @method test_empty_text_gives_no_lines() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Пустой текст даёт пустой список строк.
+    def test_empty_text_gives_no_lines(self):
+        self.assertEqual(rs.wrap_words("", 40), [])
+
+
+class TestMergeItems(unittest.TestCase):
+    """Склейка значений полей карточки."""
+
+    # @method test_does_joins_into_one_text() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Продолжения @does склеиваются через пробел.
+    def test_does_joins_into_one_text(self):
+        merged = rs.merge_items("does", ["Первая часть", "вторая часть."])
+        self.assertEqual(merged, ["Первая часть вторая часть."])
+
+    # @method test_lists_join_with_comma() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Списки @uses и @depends склеиваются через запятую.
+    def test_lists_join_with_comma(self):
+        self.assertEqual(rs.merge_items("depends", ["a", "b"]), ["a, b"])
+        self.assertEqual(rs.merge_items("uses", ["x"]), ["x"])
+
+    # @method test_in_stays_separate() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Строки @in и @out остаются отдельными.
+    def test_in_stays_separate(self):
+        self.assertEqual(
+            rs.merge_items("in", ["a: int", "b: int"]), ["a: int", "b: int"]
+        )
+
+    # @method test_empty_items_give_empty_list() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Отсутствующее поле даёт пустой список абзацев.
+    def test_empty_items_give_empty_list(self):
+        self.assertEqual(rs.merge_items("does", []), [])
+
+
+class TestRenderField(unittest.TestCase):
+    """Рендер полей карточки."""
+
+    # @method test_label_and_continuation_align() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Значение начинается после метки; продолжения выровнены
+    # @does  под началом значения и не содержат метки.
+    def test_label_and_continuation_align(self):
+        lines = rs.render_field("функция", ["слово " * 30])
+        self.assertTrue(lines[0].startswith("  функция:"))
+        pad = " " * (len("  ") + rs.LABEL_WIDTH)
+        for line in lines[1:]:
+            self.assertTrue(line.startswith(pad))
+
+    # @method test_separate_items_give_separate_paragraphs() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Каждый абзац значения начинается с метки поля.
+    def test_separate_items_give_separate_paragraphs(self):
+        lines = rs.render_field("вход", ["a: int — первое", "b: int — второе"])
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("  вход:"))
+        self.assertTrue(lines[1].startswith("  вход:"))
+
+
 class TestRender(unittest.TestCase):
     """Рендер файлов реестра."""
 
@@ -225,10 +324,10 @@ class TestRender(unittest.TestCase):
     def test_card_file_contains_cards(self):
         plan = rs.plan_registry([sample_entry()])
         text = rs.render_card_file(plan[0])
-        self.assertIn("# Карточки файла tools/sample.py", text)
-        self.assertIn("Ветвь t0.sample.demo", text)
-        self.assertIn("### one(a) -> int", text)
-        self.assertIn("**вход:** a: int — число", text)
+        self.assertIn("КАРТОЧКИ ФАЙЛА tools/sample.py", text)
+        self.assertIn("Ветвь: t0.sample.demo", text)
+        self.assertIn("МЕТОД one(a) -> int", text)
+        self.assertIn("a: int — число", text)
 
     # @method test_card_file_without_methods_note() -> None
     # @in    нет
@@ -237,18 +336,18 @@ class TestRender(unittest.TestCase):
     def test_card_file_without_methods_note(self):
         plan = rs.plan_registry([empty_entry("empty.py")])
         text = rs.render_card_file(plan[0])
-        self.assertIn("_Методов нет._", text)
+        self.assertIn("Методов нет.", text)
 
-    # @method test_index_lists_branch_with_link() -> None
+    # @method test_index_lists_branch_and_cards() -> None
     # @in    нет
     # @out   нет
-    # @does  Индекс перечисляет ветвь, ссылку на карточки и итог.
-    def test_index_lists_branch_with_link(self):
+    # @does  Индекс перечисляет ветвь, путь карточек и итог.
+    def test_index_lists_branch_and_cards(self):
         plan = rs.plan_registry([sample_entry()])
         text = rs.render_index(plan)
-        self.assertIn("## [T0] t0.sample.demo — методов: 2", text)
-        self.assertIn("(t0.sample.demo/sample.md)", text)
-        self.assertIn("**Всего методов: 2**", text)
+        self.assertIn("ВЕТВЬ t0.sample.demo [слой T0] — методов: 2", text)
+        self.assertIn("registry/t0.sample.demo/sample.txt", text)
+        self.assertIn("ВСЕГО МЕТОДОВ: 2", text)
 
     # @method test_render_all_names() -> None
     # @in    нет
@@ -257,7 +356,7 @@ class TestRender(unittest.TestCase):
     def test_render_all_names(self):
         files = rs.render_all([sample_entry()])
         self.assertEqual(
-            set(files), {"METHODS.md", "t0.sample.demo/sample.md"}
+            set(files), {"METHODS.txt", "t0.sample.demo/sample.txt"}
         )
 
 
@@ -270,9 +369,9 @@ class TestRepositoryScan(unittest.TestCase):
     # @does  Сканер даёт карточки по файлам в каталогах ветвей.
     def test_scan_finds_card_files(self):
         files = rs.scan_repository()
-        self.assertIn("METHODS.md", files)
-        self.assertIn("t0.infra.registry/registry_scan.md", files)
-        self.assertIn("t0.uvm.core/uvm_core.md", files)
+        self.assertIn("METHODS.txt", files)
+        self.assertIn("t0.infra.registry/registry_scan.txt", files)
+        self.assertIn("t0.uvm.core/uvm_core.txt", files)
 
     # @method test_all_cards_in_branch_dirs() -> None
     # @in    нет
@@ -291,7 +390,7 @@ class TestRepositoryScan(unittest.TestCase):
     # @does  Карточки генератора упоминают его исходный файл.
     def test_card_file_mentions_source(self):
         files = rs.scan_repository()
-        text = files["t0.infra.registry/registry_scan.md"]
+        text = files["t0.infra.registry/registry_scan.txt"]
         self.assertIn("tools/registry_scan.py", text)
 
 
@@ -308,15 +407,15 @@ class TestDisk(unittest.TestCase):
             old_dir = rs.REGISTRY_DIR
             rs.REGISTRY_DIR = Path(tmp)
             try:
-                stale = Path(tmp) / "t0.old.md"
+                stale = Path(tmp) / "t0.old.txt"
                 stale.write_text("старая раскладка", encoding="utf-8")
                 empty_branch = Path(tmp) / "t0.old"
                 empty_branch.mkdir()
-                files = {"t0.demo/demo.md": "карточки"}
+                files = {"t0.demo/demo.txt": "карточки"}
                 problems = rs.check_registry(files)
-                self.assertIn("лишний файл: registry/t0.old.md", problems)
+                self.assertIn("лишний файл: registry/t0.old.txt", problems)
                 rs.write_registry(files)
-                self.assertTrue((Path(tmp) / "t0.demo" / "demo.md").exists())
+                self.assertTrue((Path(tmp) / "t0.demo" / "demo.txt").exists())
                 self.assertFalse(stale.exists())
                 self.assertFalse(empty_branch.exists())
                 self.assertEqual(rs.check_registry(files), [])
