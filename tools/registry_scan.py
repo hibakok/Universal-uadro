@@ -2,14 +2,15 @@
 # @file    tools/registry_scan.py
 # @layer   T0
 # @branch  t0.infra.registry
-# @desc    Генератор реестра методов: индекс registry/METHODS.md и карточки
-# @desc    по исходным файлам registry/<ветвь>/<файл>.md. Режим --check
+# @desc    Генератор реестра методов: индекс registry/METHODS.txt и карточки
+# @desc    по исходным файлам registry/<ветвь>/<файл>.txt. Режим --check
 # @desc    сверяет реестр без записи.
 
 """Реестр методов репозитория: индекс + карточки по исходным файлам.
 
-Карточки одного исходного файла живут в registry/<ветвь>/<файл>.md:
+Карточки одного исходного файла живут в registry/<ветвь>/<файл>.txt:
 файл карточек не растёт вместе с ветвью и не упирается в лимит строк.
+Реестр — простой текст UTF-8 без разметки Markdown (.md запрещены).
 
 Запуск:
     python tools/registry_scan.py           — записать файлы реестра
@@ -22,8 +23,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIRS = ("tools", "src", "tests")
 REGISTRY_DIR = ROOT / "registry"
-INDEX_NAME = "METHODS.md"
+INDEX_NAME = "METHODS.txt"
 NO_BRANCH = "no-branch"
+CARD_SUFFIX = ".txt"
+LINE_WIDTH = 72
 
 FILE_KEYS = ("file", "layer", "branch")
 CARD_KEYS = ("in", "out", "does", "uses", "depends")
@@ -34,6 +37,7 @@ CARD_TITLES = {
     "uses": "использует",
     "depends": "зависимости",
 }
+LABEL_WIDTH = max(len(t) for t in CARD_TITLES.values()) + 2
 
 
 # @method _strip_tag(line) -> tuple
@@ -156,10 +160,10 @@ def rel_path(entry):
 # @does  внутри ветви добавляет числовой суффикс.
 def card_name_for(entry, used):
     stem = entry["path"].stem
-    name = stem + ".md"
+    name = stem + CARD_SUFFIX
     n = 2
     while name in used:
-        name = f"{stem}_{n}.md"
+        name = f"{stem}_{n}{CARD_SUFFIX}"
         n += 1
     used.add(name)
     return name
@@ -203,61 +207,134 @@ def sort_plan_branches(groups):
     return sorted(groups, key=lambda b: (layer_of(b), b))
 
 
+# @method wrap_words(text, width) -> list
+# @in    text: str — текст без переводов строк
+# @in    width: int — максимальная ширина строки
+# @out   lines: list[str] — строки не шире width
+# @does  Переносит текст по словам; слово длиннее width занимает строку
+# @does  целиком; пустой текст даёт пустой список.
+def wrap_words(text, width):
+    lines = []
+    line = ""
+    for word in text.split():
+        if not line:
+            line = word
+        elif len(line) + 1 + len(word) <= width:
+            line = line + " " + word
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
+# @method merge_items(key, items) -> list
+# @in    key: str — ключ поля (in, out, does, uses, depends)
+# @in    items: list[str] — значения поля, как в исходнике
+# @out   merged: list[str] — абзацы поля после склейки
+# @does  Склеивает продолжения: @does — в один текст через пробел;
+# @does  @uses и @depends — в один список через запятую; @in и @out
+# @does  остаются отдельными строками.
+def merge_items(key, items):
+    if key == "does":
+        return [" ".join(items)] if items else []
+    if key in ("uses", "depends"):
+        return [", ".join(items)] if items else []
+    return list(items)
+
+
+# @method render_field(title, items, indent) -> list
+# @in    title: str — название поля («вход», «функция», ...)
+# @in    items: list[str] — абзацы значения поля
+# @in    indent: str — отступ поля (по умолчанию два пробела)
+# @out   lines: list[str] — строки поля с переносами по словам
+# @does  Рендерит поле карточки: первая строка «<indent>метка: текст»,
+# @does  продолжения выровнены под началом текста.
+# @depends wrap_words
+def render_field(title, items, indent="  "):
+    lines = []
+    label = indent + (title + ":").ljust(LABEL_WIDTH)
+    for item in items:
+        body = wrap_words(item, LINE_WIDTH - len(label))
+        if not body:
+            lines.append(label.rstrip())
+            continue
+        lines.append(label + body[0])
+        for part in body[1:]:
+            lines.append(" " * len(label) + part)
+    return lines
+
+
+# @method render_card(card) -> list
+# @in    card: dict — карточка метода (name, in, out, does, uses, depends)
+# @out   lines: list[str] — строки одной карточки в простом тексте
+# @does  Рендерит карточку: заголовок «МЕТОД ...» и поля с отступом.
+# @depends merge_items, render_field
+def render_card(card):
+    lines = ["МЕТОД " + card["name"]]
+    for key in CARD_KEYS:
+        lines.extend(render_field(CARD_TITLES[key], merge_items(key, card[key])))
+    lines.append("")
+    return lines
+
+
 # @method render_cards(entry) -> list
 # @in    entry: dict — элемент реестра (path, header, cards)
-# @out   lines: list[str] — markdown-строки: карточки методов файла
+# @out   lines: list[str] — карточки методов файла
 # @does  Рендерит карточки методов; файл без методов даёт пометку.
+# @depends render_card
 def render_cards(entry):
     if not entry["cards"]:
-        return ["_Методов нет._", ""]
+        return ["Методов нет.", ""]
     lines = []
     for card in entry["cards"]:
-        lines.append(f"### {card['name']}")
-        lines.append("")
-        for key in CARD_KEYS:
-            for item in card[key]:
-                lines.append(f"- **{CARD_TITLES[key]}:** {item}")
-        lines.append("")
+        lines.extend(render_card(card))
     return lines
 
 
 # @method render_card_file(item) -> str
 # @in    item: dict — элемент плана реестра (branch, entry, card)
-# @out   text: str — текст файла registry/<ветвь>/<файл>.md
+# @out   text: str — текст файла registry/<ветвь>/<файл>.txt
 # @does  Собирает карточки одного исходного файла: шапка с ветвью, слоем
 # @does  и описанием, затем карточки методов.
-# @depends rel_path, render_cards
+# @depends rel_path, render_cards, wrap_words
 def render_card_file(item):
     entry = item["entry"]
     layer = entry["header"]["layer"] or "?"
     lines = [
-        f"# Карточки файла {rel_path(entry)}",
+        "КАРТОЧКИ ФАЙЛА " + rel_path(entry),
         "",
-        f"Ветвь {item['branch']}, слой {layer}, методов:"
-        f" {len(entry['cards'])}. Генерируется `tools/registry_scan.py`;"
-        " вручную не редактировать.",
-        "",
+        "Ветвь: " + item["branch"],
+        "Слой: " + layer,
+        "Методов: " + str(len(entry["cards"])),
+        "Генерируется tools/registry_scan.py; вручную не редактировать.",
     ]
-    if entry["header"]["desc"]:
-        lines.append("_" + " ".join(entry["header"]["desc"]) + "_")
-        lines.append("")
+    desc = " ".join(entry["header"]["desc"])
+    if desc:
+        label = "Описание: "
+        body = wrap_words(desc, LINE_WIDTH - len(label))
+        lines.append(label + body[0])
+        for part in body[1:]:
+            lines.append(" " * len(label) + part)
+    lines.append("")
     lines.extend(render_cards(entry))
     return "\n".join(lines)
 
 
 # @method render_index(plan) -> str
 # @in    plan: list[dict] — план реестра: branch, entry, card на исходник
-# @out   text: str — текст индекса registry/METHODS.md
-# @does  Формирует компактный индекс: ветви, их файлы со ссылками на карточки
+# @out   text: str — текст индекса registry/METHODS.txt
+# @does  Формирует компактный индекс: ветви, их файлы с путями карточек
 # @does  и числом методов, плюс итог по репозиторию.
-# @depends group_plan_by_branch, sort_plan_branches, rel_path
+# @depends group_plan_by_branch, sort_plan_branches, rel_path, wrap_words
 def render_index(plan):
     groups = group_plan_by_branch(plan)
     lines = [
-        "# Реестр методов — индекс",
+        "РЕЕСТР МЕТОДОВ — ИНДЕКС",
         "",
-        "Индекс генерируется `tools/registry_scan.py`; вручную не редактировать.",
-        "Карточки методов исходного файла — в `registry/<ветвь>/<файл>.md`.",
+        "Индекс генерируется tools/registry_scan.py; вручную не редактировать.",
+        "Карточки методов исходного файла — registry/<ветвь>/<файл>.txt.",
         "",
     ]
     total = 0
@@ -266,15 +343,22 @@ def render_index(plan):
         layer = items[0]["entry"]["header"]["layer"] or "?"
         methods = sum(len(i["entry"]["cards"]) for i in items)
         total += methods
-        lines.append(f"## [{layer}] {branch} — методов: {methods}")
+        lines.append("ВЕТВЬ " + branch + " [слой " + layer
+                     + "] — методов: " + str(methods))
         lines.append("")
         for item in items:
             entry = item["entry"]
-            desc = " ".join(entry["header"]["desc"]) or "_без описания_"
-            link = f"[{rel_path(entry)}]({branch}/{item['card']})"
-            lines.append(f"- {link} — {desc} — методов: {len(entry['cards'])}")
+            lines.append("- " + rel_path(entry) + " — методов: "
+                         + str(len(entry["cards"])))
+            lines.append("  карточки: registry/" + branch + "/" + item["card"])
+            desc = " ".join(entry["header"]["desc"]) or "без описания"
+            label = "  описание: "
+            body = wrap_words(desc, LINE_WIDTH - len(label))
+            lines.append(label + body[0])
+            for part in body[1:]:
+                lines.append(" " * len(label) + part)
         lines.append("")
-    lines.append(f"**Всего методов: {total}**")
+    lines.append("ВСЕГО МЕТОДОВ: " + str(total))
     lines.append("")
     return "\n".join(lines)
 
@@ -304,8 +388,8 @@ def scan_repository():
 # @method check_registry(files) -> list
 # @in    files: dict — имя файла -> ожидаемый текст
 # @out   problems: list[str] — расхождения (пустой список = реестр актуален)
-# @does  Сверяет ожидаемый реестр с файлами на диске, включая лишние файлы
-# @does  во всех подкаталогах registry/.
+# @does  Сверяет ожидаемый реестр с файлами на диске, включая любые
+# @does  лишние файлы во всех подкаталогах registry/.
 def check_registry(files):
     problems = []
     for name in sorted(files):
@@ -313,7 +397,9 @@ def check_registry(files):
         actual = path.read_text(encoding="utf-8") if path.exists() else None
         if actual != files[name]:
             problems.append(f"не актуален: registry/{name}")
-    for path in sorted(REGISTRY_DIR.rglob("*.md")):
+    for path in sorted(REGISTRY_DIR.rglob("*")):
+        if not path.is_file():
+            continue
         rel = path.relative_to(REGISTRY_DIR).as_posix()
         if rel not in files:
             problems.append(f"лишний файл: registry/{rel}")
