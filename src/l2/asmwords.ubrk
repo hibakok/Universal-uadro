@@ -1,0 +1,282 @@
+; @uadro
+; @file    src/l2/asmwords.ubrk
+; @layer   L2
+; @branch  l2.uasm.assemble
+; @desc    Ассемблер uAsm — строки и слова: use-включение главного файла
+; @desc    src/l2/assemble.ubrk (SPEC/L4-SELFHOST.txt, раздел 5А, подшаг 2).
+; @desc    Деление буфера источника на строки со счётчиком (linestep),
+; @desc    чистка строки (концевые CR, комментарий «;» вне кавычек,
+; @desc    крайние пробелы), первое слово и остаток (splitword), слова
+; @desc    аргументов в пары буфера аргументов (splitargs).
+
+; Клетки прохода по строкам: bp — начало следующей строки буфера,
+; be — конец буфера (за последним байтом входа), ln — номер текущей
+; строки начиная с 1, lq — конец текущей строки (адрес LF либо be;
+; хранится отдельно, потому что сканеры doline затирают cp — SPEC/
+; L4-SELFHOST.txt, раздел 5А: строки делятся по LF, номера — с 1,
+; как split_lines эталона).
+var bp
+var be
+var ln
+var lq
+
+; Клетки сканера байтов: cp — позиция, qe — предел (за последним байтом
+; диапазона); сканеры cstep, lfstep и spstep пользуются ими строго
+; по очереди, без вложения.
+var cp
+var qe
+
+; Клетка кавычки сканера комментариев (cstep): 0 — вне литералов,
+; 34 — внутри «"», 39 — внутри «'».
+var cq
+
+; Клетки слова строки (splitword): wa/wl — адрес и длина первого слова,
+; ra/rl — адрес и длина остатка после слова (пробелы после слова сняты).
+var wa
+var wl
+var ra
+var rl
+
+; Клетки аргументов строки (splitargs): argc — число заполненных пар
+; (0..256), ap — позиция разбора остатка, ae — предел остатка.
+var argc
+var ap
+var ae
+
+; @method isspace ( c -- ф )
+; @in    c: слово — байт 0..255
+; @out   ф: слово — 1: пробел (32) или табуляция (9); иначе 0
+; @does  Признак разделителя слов (SPEC/L2-UASM.txt, раздел 2); кирпич
+; @does  чистки строки и разбиения на слова.
+; @depends EQ
+: isspace
+  DUP 32 EQ IF DROP 1 EXIT THEN
+  9 EQ ;
+
+; @method cstep ( -- done )
+; @in    нет (клетки cp, qe, cq — состояние скана)
+; @out   done: слово — 0: позиция cp движется; 1: стоп — cp за пределом
+; @out   либо на «;» (59) вне кавычек
+; @does  Один шаг поиска «;» вне литералов (SPEC/L2-UASM.txt, раздел 2,
+; @does  как find_outside_quotes эталона): вне кавычки «"» (34) и «'»
+; @does  (39) открывают литерал; внутри литерала «\» (92) пропускает
+; @does  два байта, парная кавычка закрывает; «;» вне кавычек — стоп;
+; @does  незакрытая кавычка тянется до предела диапазона.
+; @depends cp, qe, cq, LTU, not, EQ
+: cstep
+  cp LOAD64 qe LOAD64 LTU not IF 1 EXIT THEN
+  cq LOAD64
+  IF
+    cp LOAD64 LOAD8 92 EQ
+    IF cp LOAD64 2 ADD cp STORE64 0 EXIT THEN
+    cp LOAD64 LOAD8 cq LOAD64 EQ
+    IF 0 cq STORE64 THEN
+    cp LOAD64 1 ADD cp STORE64 0
+  ELSE
+    cp LOAD64 LOAD8 DUP 34 EQ
+    IF DROP 34 cq STORE64 cp LOAD64 1 ADD cp STORE64 0 EXIT THEN
+    DUP 39 EQ
+    IF DROP 39 cq STORE64 cp LOAD64 1 ADD cp STORE64 0 EXIT THEN
+    59 EQ IF 1 EXIT THEN
+    cp LOAD64 1 ADD cp STORE64 0
+  THEN ;
+
+; @method findsemi ( s e -- s cut )
+; @in    s: слово — адрес первого байта диапазона
+; @in    e: слово — адрес за последним байтом диапазона
+; @out   s: слово — прежний адрес начала (передаётся дальше по цепочке)
+; @out   cut: слово — адрес «;» вне кавычек либо e (комментария нет)
+; @does  Ищет начало комментария в [s, e) (SPEC/L2-UASM.txt, раздел 2):
+; @does  cstep сканирует диапазон; перелёт escape за e выравнивается
+; @does  на e; кирпич doline главного файла.
+; @depends cp, qe, cq, cstep, LTU, not
+: findsemi
+  qe STORE64 DUP cp STORE64 0 cq STORE64
+  BEGIN cstep UNTIL
+  cp LOAD64 qe LOAD64 LTU not IF qe LOAD64 cp STORE64 THEN
+  cp LOAD64 ;
+
+; @method crstep ( s e -- s e done )
+; @in    s: слово — адрес первого байта строки
+; @in    e: слово — адрес за последним байтом строки
+; @out   s, e: слово — границы после шага (e уменьшается на концевой CR)
+; @out   done: слово — 0: концевой CR (13) снят, продолжить; 1: снимать
+; @out   нечего (не CR или строка пуста)
+; @does  Один шаг снятия концевых CR (SPEC/L4-SELFHOST.txt, раздел 5А:
+; @does  концевой CR снимается — как rstrip("\r") split_lines эталона,
+; @does  все концевые CR подряд); кирпич doline.
+; @depends LTU, not, EQ
+: crstep
+  OVER OVER LTU not IF 1 EXIT THEN
+  DUP 1 SUB LOAD8 13 EQ IF 1 SUB 0 ELSE 1 THEN ;
+
+; @method rtrimstep ( s e -- s e done )
+; @in    s: слово — адрес первого байта
+; @in    e: слово — адрес за последним байтом
+; @out   s, e: слово — границы после шага (e уменьшается на пробел)
+; @out   done: слово — 0: концевой пробел/табуляция сняты; 1: снимать
+; @out   нечего
+; @does  Один шаг чистки конца строки от пробелов и табуляций
+; @does  (SPEC/L2-UASM.txt, раздел 2: крайние пробелы игнорируются);
+; @does  кирпич rtrim.
+; @depends LTU, not, isspace
+: rtrimstep
+  OVER OVER LTU not IF 1 EXIT THEN
+  DUP 1 SUB LOAD8 isspace IF 1 SUB 0 ELSE 1 THEN ;
+
+; @method rtrim ( s e -- s e' )
+; @in    s: слово — адрес первого байта
+; @in    e: слово — адрес за последним байтом
+; @out   s, e': слово — конец без концевых пробелов и табуляций
+; @does  Снимает концевые пробелы и табуляции (цикл rtrimstep); кирпич
+; @does  doline.
+; @depends rtrimstep
+: rtrim
+  BEGIN rtrimstep UNTIL ;
+
+; @method ltrimstep ( s e -- s' e done )
+; @in    s: слово — адрес первого байта
+; @in    e: слово — адрес за последним байтом
+; @out   s': слово — начало без начального пробела/табуляции
+; @out   e: слово — прежний конец
+; @out   done: слово — 0: начальный пробел снят; 1: снимать нечего
+; @does  Один шаг чистки начала строки (SPEC/L2-UASM.txt, раздел 2);
+; @does  кирпич ltrim.
+; @depends LTU, not, isspace
+: ltrimstep
+  OVER OVER LTU not IF 1 EXIT THEN
+  OVER LOAD8 isspace IF SWAP 1 ADD SWAP 0 ELSE 1 THEN ;
+
+; @method ltrim ( s e -- s' e )
+; @in    s: слово — адрес первого байта
+; @in    e: слово — адрес за последним байтом
+; @out   s': слово — начало без начальных пробелов и табуляций
+; @out   e: слово — прежний конец
+; @does  Снимает начальные пробелы и табуляции (цикл ltrimstep); также
+; @does  пропускает пробелы после первого слова (кирпичи splitword
+; @does  и argstep).
+; @depends ltrimstep
+: ltrim
+  BEGIN ltrimstep UNTIL ;
+
+; @method lfstep ( -- done )
+; @in    нет (клетки cp, qe — состояние скана)
+; @out   done: слово — 0: cp движется; 1: cp — на LF (10) либо за
+; @out   пределом диапазона
+; @does  Один шаг поиска перевода строки LF — делителя строк буфера
+; @does  (SPEC/L4-SELFHOST.txt, раздел 5А); кирпич linestep.
+; @depends cp, qe, LTU, not, EQ
+: lfstep
+  cp LOAD64 qe LOAD64 LTU not IF 1 EXIT THEN
+  cp LOAD64 LOAD8 10 EQ IF 1 EXIT THEN
+  cp LOAD64 1 ADD cp STORE64 0 ;
+
+; @method spstep ( -- done )
+; @in    нет (клетки cp, qe — состояние скана)
+; @out   done: слово — 0: cp движется; 1: cp — на пробеле/табуляции либо
+; @out   за пределом диапазона
+; @does  Один шаг поиска разделителя слов (SPEC/L2-UASM.txt, раздел 2);
+; @does  кирпич findfirst.
+; @depends cp, qe, LTU, not, isspace
+: spstep
+  cp LOAD64 qe LOAD64 LTU not IF 1 EXIT THEN
+  cp LOAD64 LOAD8 isspace IF 1 EXIT THEN
+  cp LOAD64 1 ADD cp STORE64 0 ;
+
+; @method findfirst ( s e -- w )
+; @in    s: слово — адрес первого байта
+; @in    e: слово — адрес за последним байтом
+; @out   w: слово — адрес первого пробела/табуляции в [s, e) либо e
+; @does  Конец первого слова диапазона: spstep сканирует [s, e); кирпичи
+; @does  splitword и argstep.
+; @depends cp, qe, spstep
+: findfirst
+  qe STORE64 cp STORE64
+  BEGIN spstep UNTIL
+  cp LOAD64 ;
+
+; @method splitword ( s e -- )
+; @in    s: слово — адрес первого байта чистой строки
+; @in    e: слово — адрес за последним байтом чистой строки
+; @out   нет; клетки wa/wl — адрес и длина первого слова, ra/rl — адрес
+; @out   и длина остатка (пробелы после слова сняты)
+; @does  Делит чистую строку на первое слово и остаток (SPEC/L2-UASM.txt,
+; @does  раздел 2, как split_first эталона): конец слова — findfirst,
+; @does  остаток — ltrim от конца слова; слово без пробела занимает
+; @does  строку целиком, остаток пуст.
+; @depends findfirst, ltrim, wa, wl, ra, rl, ROT, DUP, SWAP, SUB, NEG,
+; @depends ADD, OVER, STORE64, LOAD64
+: splitword
+  OVER OVER findfirst
+  ROT DUP wa STORE64
+  SWAP SUB NEG wl STORE64
+  wa LOAD64 wl LOAD64 ADD SWAP
+  ltrim
+  OVER ra STORE64
+  SWAP SUB rl STORE64 ;
+
+; @method argstep ( -- done )
+; @in    нет (клетки ap, ae, argc — состояние разбора остатка)
+; @out   done: слово — 0: слово-аргумент сохранено в пары; 1: аргументов
+; @out   больше нет
+; @does  Один шаг разбора остатка на слова-аргументы (SPEC/L2-UASM.txt,
+; @does  раздел 2, как split_words эталона; SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): пропускает пробелы (ltrim), слова нет — конец;
+; @does  пара «адрес, длина» (16 байтов LE) пишется в буфер аргументов
+; @does  по адресу argbase + argc * 16, argc растёт, ap ставится на
+; @does  конец слова; 257-й аргумент строки — диагностика «слишком
+; @does  много аргументов» (fail, код 16).
+; @depends ap, ae, argc, ltrim, findfirst, argbase, targs, fail, LTU,
+; @depends not, OVER, SUB, MUL, ADD, ROT, SWAP, DUP, STORE64
+: argstep
+  ap LOAD64 ae LOAD64 ltrim DROP ap STORE64
+  ap LOAD64 ae LOAD64 LTU not IF 1 EXIT THEN
+  argc LOAD64 256 LTU not IF targs fail THEN
+  ap LOAD64 ae LOAD64 findfirst
+  ap LOAD64 OVER OVER SUB
+  argc LOAD64 16 MUL argbase ADD
+  DUP 8 ADD ROT SWAP STORE64 STORE64
+  argc LOAD64 1 ADD argc STORE64
+  ap STORE64
+  0 ;
+
+; @method splitargs ( -- )
+; @in    нет (клетки ra, rl — остаток строки после первого слова)
+; @out   нет; клетки argc и буфер аргументов — пары слов остатка
+; @does  Разбирает остаток строки на слова-аргументы (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А, подшаг 2): обнуляет argc, ставит
+; @does  ap на начало остатка, ae — за его конец, argstep до конца;
+; @does  пустой остаток — ноль пар.
+; @depends ra, rl, ap, ae, argc, argstep
+: splitargs
+  0 argc STORE64
+  ra LOAD64 rl LOAD64 ADD ae STORE64
+  ra LOAD64 ap STORE64
+  BEGIN argstep UNTIL ;
+
+; @method linestep ( -- done )
+; @in    нет (клетки bp, be, ln — состояние прохода по строкам)
+; @out   done: слово — 0: строка обработана, проход продолжается; 1: строк
+; @out   больше нет (bp достиг be)
+; @does  Один шаг прохода по строкам буфера источника (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А, подшаг 2): lfstep ищет конец строки
+; @does  [bp, lq) — LF либо конец буфера; doline обрабатывает строку
+; @does  (сканеры doline затирают cp, поэтому конец хранится в lq);
+; @does  найденный LF — bp за ним и ln + 1; строка без LF (последняя) —
+; @does  bp = be. Проход переиспользуется проходами ассемблера
+; @does  (подшаги 5-6).
+; @depends bp, be, ln, lq, cp, qe, lfstep, doline, LTU, not
+: linestep
+  bp LOAD64 be LOAD64 LTU not IF 1 EXIT THEN
+  bp LOAD64 be LOAD64 qe STORE64 cp STORE64
+  BEGIN lfstep UNTIL
+  cp LOAD64 lq STORE64
+  bp LOAD64 lq LOAD64 doline
+  lq LOAD64 be LOAD64 LTU
+  IF
+    lq LOAD64 1 ADD bp STORE64
+    ln LOAD64 1 ADD ln STORE64
+  ELSE
+    be LOAD64 bp STORE64
+  THEN
+  bp LOAD64 be LOAD64 LTU not ;
