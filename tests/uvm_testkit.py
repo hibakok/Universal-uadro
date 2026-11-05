@@ -4,8 +4,10 @@
 # @branch  t0.infra.tests
 # @desc    Общий тест-набор UVM: компактные машины, снимки стека, сборка
 # @desc    образов программ (в машину и байтами в файл), чтение кодов
-# @desc    ловушек и остановки, заглушки потоков хоста и прогон образов
-# @desc    через cli — для тестов ветвей t0.uvm.*.
+# @desc    ловушек и остановки, заглушки потоков хоста, прогон образов
+# @desc    через cli и прогон без процесса с подменёнными stdin/stdout
+# @desc    (run_with_io) — для тестов ветвей t0.uvm.* и собственных
+# @desc    инструментов Этапа 4 (SPEC/L4-SELFHOST.txt).
 
 """Тест-набор UVM (ветвь t0.infra.tests).
 
@@ -13,8 +15,10 @@
 для проверок границ, чтение кодов ловушек и остановки HALT, сборка
 образов (load_prog — сразу в машину, image_of/image_file — байтами,
 в том числе в файл для ветви t0.uvm.cli), заглушки stdin/stdout
-с полем buffer — как у реальных потоков Python, и run_via_cli —
-полный прогон образа через командный запуск.
+с полем buffer — как у реальных потоков Python, run_via_cli —
+полный прогон образа через командный запуск и run_with_io — прогон
+без процесса с подменёнными stdin/stdout для собственных инструментов
+Этапа 4 (SPEC/L4-SELFHOST.txt, раздел 6).
 """
 
 import contextlib
@@ -25,6 +29,7 @@ import tempfile
 
 from tools import uvm_cli
 from tools import uvm_core as uc
+from tools import uvm_run
 
 
 # @method small(ram_size, ds_size, rs_size) -> Machine
@@ -141,18 +146,19 @@ class FakeStream:
         self.buffer = io.BytesIO(data)
 
 
-# @method patched_stdin(stream, action) -> None
+# @method patched_stdin(stream, action) -> result
 # @in    stream: FakeStream — заглушка стандартного ввода
 # @in    action: callable — проверяемое действие
-# @out   нет
-# @does  Подменяет sys.stdin на время действия и гарантированно
-# @does  восстанавливает после (в contextlib нет redirect_stdin).
+# @out   result — значение, возвращённое action (проброс наружу)
+# @does  Подменяет sys.stdin на время действия, гарантированно
+# @does  восстанавливает после (в contextlib нет redirect_stdin)
+# @does  и возвращает результат действия; кирпич run_with_io.
 # @uses  sys.stdin — стандартный ввод хоста (подмена на время действия)
 def patched_stdin(stream, action):
     saved = sys.stdin
     sys.stdin = stream
     try:
-        action()
+        return action()
     finally:
         sys.stdin = saved
 
@@ -173,4 +179,24 @@ def run_via_cli(image, args=()):
     with image_file(image) as path:
         with contextlib.redirect_stdout(out):
             code = uvm_cli.main([path] + list(args))
+    return code, out.buffer.getvalue()
+
+
+# @method run_with_io(image, feed) -> tuple
+# @in    image: bytes — образ программы
+# @in    feed: bytes — байты стандартного ввода (по умолчанию пусто)
+# @out   code: int — код завершения: imm HALT или код ловушки
+# @out   out: bytes — байты, выведенные программой в stdout
+# @does  Прогон образа без процесса: SYS 0 читает feed, SYS 1 пишет
+# @does  в выходной буфер (run_image под подменёнными stdin/stdout);
+# @does  кирпич золотых тестов собственных инструментов Этапа 4
+# @does  (SPEC/L4-SELFHOST.txt, раздел 6).
+# @depends FakeStream, patched_stdin, uvm_run.run_image
+# @uses   sys.stdin, sys.stdout — потоки хоста (подмена на время прогона)
+def run_with_io(image, feed=b""):
+    src = FakeStream(feed)
+    out = FakeStream()
+    with contextlib.redirect_stdout(out):
+        _, code = patched_stdin(src,
+                                lambda: uvm_run.run_image(image))
     return code, out.buffer.getvalue()
