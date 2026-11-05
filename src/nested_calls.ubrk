@@ -1,0 +1,33 @@
+; @uadro — исходник слоя L3 (uBrick)
+; Программа «вложенные вычисления» (ветвь t0.ubrick.integration,
+; Этап 3). Main вызывает sub1, та — sub2: глубина вложенности два.
+; Значения 111 и 222 пишутся в var-ячейки и читаются обратно;
+; слово wait0 — счётный цикл BEGIN/UNTIL с производным словом dec
+; (SPEC/L3-UBRICK.txt, разделы 4.2, 5 и 6). Поведение — как у эталона
+; Этапа 2 src/nested_calls.uasm: вывод "!", стек данных [111, 222],
+; пустой RS, код завершения 0.
+
+var x
+var y
+var i
+
+: sub2
+222 x STORE64 ;
+
+: sub1
+111 y STORE64
+sub2 ;
+
+: wait0
+BEGIN
+i LOAD64 dec i STORE64
+i LOAD64 0 EQ
+UNTIL ;
+
+: main
+sub1
+3 i STORE64
+wait0
+y LOAD64
+x LOAD64
+'!' EMIT ;
