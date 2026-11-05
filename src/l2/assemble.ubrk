@@ -5,13 +5,19 @@
 ; @desc    Ассемблер uAsm — собственное воплощение Этапа 4: вход — текст
 ; @desc    uAsm в stdin (KEY), выход — образ UVM в stdout (EMIT); код 0 —
 ; @desc    успех, 16 — ошибка входа (SPEC/L4-SELFHOST.txt, разделы 4 и 5А).
-; @desc    Подшаг 1 (каркас и память): use-включение asmmem.ubrk даёт
-; @desc    раскладку ОЗУ и кирпичи чтения; вход читается целиком в буфер
-; @desc    источника 512 КиБ (readstep), вход сверх лимита — строка «вход
-; @desc    слишком большой» и код 16; пустой вход — пустой вывод, код 0.
-; @desc    Разбор строк, литералы, записи, символы и проходы — подшаги 2-7
-; @desc    (SPEC/L4-SELFHOST.txt, раздел 5А).
+; @desc    Подшаг 1 (каркас и память): use-включение asmmem.ubrk — вход
+; @desc    читается целиком в буфер источника 512 КиБ (readstep), вход
+; @desc    сверх лимита — строка «вход слишком большой» и код 16. Подшаг 2
+; @desc    (строки и слова): use-включения asmwords.ubrk (деление буфера
+; @desc    на строки, чистка строки, первое слово, аргументы парами)
+; @desc    и asmmnem.ubrk (таблица мнемоник и поиск кода); проход linestep
+; @desc    печатает промежуточный листинг «N:слово[=код] аргументы» —
+; @desc    поведение подшага, заменяемое разбором записей и сборкой образа
+; @desc    в подшагах 3-6. Литералы, записи, символы и проходы — подшаги
+; @desc    3-7 (SPEC/L4-SELFHOST.txt, раздел 5А).
 use asmmem.ubrk
+use asmwords.ubrk
+use asmmnem.ubrk
 
 ; @method tbig ( -- addr )
 ; @in    нет
@@ -51,16 +57,162 @@ text tbig "вход слишком большой"
     1
   THEN ;
 
+; @method printu ( u -- )
+; @in    u: слово — значение 0..2^64-1
+; @out   нет (цифры выводятся в stdout, EMIT)
+; @does  Печатает десятичное число (SPEC/L4-SELFHOST.txt, раздел 5А, как
+; @does  printu дизассемблера): старшие разряды — рекурсивный вызов
+; @does  с частным от UDIV 10, затем младший разряд — остаток UMOD 10
+; @does  + '0'; u = 0 даёт «0»; кирпич listline и диагностики fail.
+; @depends UDIV, UMOD, ADD, EMIT, printu
+: printu
+  DUP 10 UDIV SWAP 10 UMOD
+  SWAP DUP IF printu ELSE DROP THEN
+  48 ADD EMIT ;
+
+; Клетки печати слова: pa — адрес следующего байта, pl — сколько байтов
+; осталось (printw).
+var pa
+var pl
+
+; @method pwstep ( -- done )
+; @in    нет (клетки pa, pl — состояние печати)
+; @out   done: слово — 0: байт выведен; 1: байтов больше нет
+; @does  Один шаг печати слова: pl = 0 — стоп; байт по адресу pa — EMIT,
+; @does  pa + 1, pl - 1; кирпич printw.
+; @depends pa, pl, EQ, LOAD8, EMIT, ADD, SUB
+: pwstep
+  pl LOAD64 0 EQ IF 1 EXIT THEN
+  pa LOAD64 LOAD8 EMIT
+  pa LOAD64 1 ADD pa STORE64
+  pl LOAD64 1 SUB pl STORE64
+  0 ;
+
+; @method printw ( a l -- )
+; @in    a: слово — адрес первого байта слова
+; @in    l: слово — число байтов слова
+; @out   нет (байты слова выводятся в stdout, EMIT)
+; @does  Печатает l байтов с адреса a: слова листинга и аргументы
+; @does  (listline), слова диагностик подшагов 4-7.
+; @depends pa, pl, pwstep
+: printw
+  pl STORE64 pa STORE64
+  BEGIN pwstep UNTIL ;
+
+; @method tuasm ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «uAsm: строка » (UTF-8 + 0)
+; @does  Данные: префикс диагностической строки ассемблера (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А: «uAsm: строка N: текст»); печать —
+; @does  словом prints, номер строки — printu; кирпич fail.
+text tuasm "uAsm: строка "
+
+; @method targs ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «слишком много аргументов» (UTF-8 + 0)
+; @does  Данные: текст ошибки ёмкости буфера аргументов (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А: больше 256 аргументов DB/DW в одной
+; @does  строке); печать — fail.
+text targs "слишком много аргументов"
+
+; @method fail ( a -- )
+; @in    a: слово — адрес текста ошибки (Z-строка)
+; @out   нет; не возвращается: строка выводится в stdout, затем программа
+; @out   завершается кодом 16
+; @does  Диагностика ошибки входа (SPEC/L4-SELFHOST.txt, раздел 5А):
+; @does  печатает «uAsm: строка N: » (tuasm, номер строки ln, printu,
+; @does  двоеточие и пробел), текст ошибки (prints), перевод строки
+; @does  и завершает программу словом QUIT (HALT 16); образ при ошибке
+; @does  не выводится.
+; @depends tuasm, ln, printu, EMIT, space, prints, cr, QUIT
+: fail
+  tuasm prints
+  ln LOAD64 printu
+  58 EMIT space
+  prints cr QUIT ;
+
+; Клетка печати аргументов: ai — индекс следующей пары буфера аргументов.
+var ai
+
+; @method argpstep ( -- done )
+; @in    нет (клетки ai, argc — состояние печати; буфер аргументов)
+; @out   done: слово — 0: аргумент выведен; 1: аргументов больше нет
+; @does  Один шаг печати аргументов строки: пара ai лежит по адресу
+; @does  argbase + ai * 16 — адрес слова (LOAD64) и длина (LOAD64
+; @does  с адреса пары + 8); перед аргументом — пробел; кирпич argprint.
+; @depends ai, argc, argbase, LTU, not, MUL, ADD, LOAD64, space, printw
+: argpstep
+  ai LOAD64 argc LOAD64 LTU not IF 1 EXIT THEN
+  space
+  ai LOAD64 16 MUL argbase ADD DUP LOAD64 SWAP 8 ADD LOAD64 printw
+  ai LOAD64 1 ADD ai STORE64
+  0 ;
+
+; @method argprint ( -- )
+; @in    нет (клетка argc и буфер аргументов — аргументы строки)
+; @out   нет (аргументы выводятся в stdout через пробел)
+; @does  Печатает аргументы строки: пары буфера аргументов по порядку,
+; @does  перед каждым — пробел (space + printw); кирпич listline.
+; @depends ai, argpstep
+: argprint
+  0 ai STORE64
+  BEGIN argpstep UNTIL ;
+
+; @method listline ( -- )
+; @in    нет (клетки ln, wa, wl, argc и буфер аргументов — строка)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Промежуточное поведение подшага 2 (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А; заменяется разбором строки в запись в подшаге 4):
+; @does  печатает строку листинга «N:слово[=код] аргументы» — номер
+; @does  строки (printu), двоеточие, первое слово (printw), код
+; @does  мнемоники после «=» (mnem, printu), аргументы через пробел
+; @does  (argprint), перевод строки; пустые строки и комментарии молчат
+; @does  (их отсеивает doline).
+; @depends ln, printu, wa, wl, printw, mnem, argprint, cr, EMIT
+: listline
+  ln LOAD64 printu
+  58 EMIT
+  wa LOAD64 wl LOAD64 printw
+  mnem IF 61 EMIT printu THEN
+  argprint
+  cr ;
+
+; @method doline ( s q -- )
+; @in    s: слово — адрес первого байта строки буфера
+; @in    q: слово — адрес за последним байтом строки (на LF либо be)
+; @out   нет (строка обрабатывается; вывод подшага 2 — listline)
+; @does  Обрабатывает одну строку (SPEC/L4-SELFHOST.txt, раздел 5А,
+; @does  подшаг 2): снимает концевые CR (crstep), отрезает комментарий
+; @does  «;» вне кавычек (findsemi), снимает крайние пробелы и табуляции
+; @does  (rtrim, ltrim); пустая строка или комментарий — тишина; иначе
+; @does  splitword (первое слово и остаток), splitargs (аргументы парами)
+; @does  и listline. Подшаг 4 заменит listline разбором строки в запись.
+; @depends crstep, findsemi, rtrim, ltrim, LTU, not, splitword,
+; @depends splitargs, listline
+: doline
+  BEGIN crstep UNTIL
+  findsemi
+  rtrim ltrim
+  OVER OVER LTU not IF DROP DROP EXIT THEN
+  splitword
+  splitargs
+  listline ;
+
 ; @method main ( -- )
 ; @in    нет (вход инструмента — байты stdin, KEY)
-; @out   нет (подшаг 1: вывод пустой; код завершения 0 — успех)
-; @does  Каркас ассемблера, подшаг 1 (SPEC/L4-SELFHOST.txt, раздел 5А):
-; @does  читает stdin целиком в буфер источника — курсор srcbase, шаги
-; @does  readstep до EOF (UNTIL), конец буфера снимается со стека, BYE —
-; @does  код 0; пустой вход — пустой вывод. Разбор строк и сборка образа
-; @does  — подшаги 2-7.
-; @depends srcbase, readstep, BYE
+; @out   нет (выход подшага 2 — листинг строк в stdout, EMIT; код
+; @out   завершения 0 — успех, 16 — ошибка входа)
+; @does  Каркас ассемблера (SPEC/L4-SELFHOST.txt, раздел 5А): читает
+; @does  stdin целиком в буфер источника (readstep, конец — в be), ставит
+; @does  bp на начало буфера и ln = 1, проходит строки (linestep
+; @does  до конца) и завершается BYE; пустой вход — пустой вывод.
+; @does  Разбор в записи и сборка образа — подшаги 4-6.
+; @depends srcbase, readstep, be, bp, ln, linestep, BYE
 : main
   srcbase
   BEGIN readstep UNTIL
-  DROP BYE ;
+  be STORE64
+  srcbase bp STORE64
+  1 ln STORE64
+  BEGIN linestep UNTIL
+  BYE ;
