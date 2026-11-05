@@ -12,6 +12,10 @@
 файл карточек не растёт вместе с ветвью и не упирается в лимит строк.
 Реестр — простой текст UTF-8 без разметки Markdown (.md запрещены).
 
+Сканируются исходники Python (*.py, аннотации "# @...") и исходники
+собственных языков (*.uasm, *.ubrk — аннотации "; @...", Этап 4,
+SPEC/L4-SELFHOST.txt, раздел 3).
+
 Запуск:
     python tools/registry_scan.py           — записать файлы реестра
     python tools/registry_scan.py --check   — сверка без записи (для CI)
@@ -22,6 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIRS = ("tools", "src", "tests")
+SOURCE_EXTS = ("*.py", "*.uasm", "*.ubrk")
 REGISTRY_DIR = ROOT / "registry"
 INDEX_NAME = "METHODS.txt"
 NO_BRANCH = "no-branch"
@@ -42,11 +47,15 @@ LABEL_WIDTH = max(len(t) for t in CARD_TITLES.values()) + 2
 
 # @method _strip_tag(line) -> tuple
 # @in    line: str — строка исходного файла
-# @out   pair: tuple — (ключ, значение) для строки "# @ключ значение", иначе (None, "")
-# @does  Распознаёт строки-аннотации "# @ключ значение".
+# @out   pair: tuple — (ключ, значение) для строки "# @ключ значение"
+# @out   (Python) или "; @ключ значение" (uAsm/uBrick, Этап 4),
+# @out   иначе (None, "")
+# @does  Распознаёт строки-аннотации обоих видов: после маркера
+# @does  комментария (# или ;) идёт пробел и "@ключ значение"
+# @does  (SPEC/L4-SELFHOST.txt, раздел 3).
 def _strip_tag(line):
     s = line.strip()
-    if not s.startswith("# @"):
+    if not (s.startswith("# @") or s.startswith("; @")):
         return None, ""
     body = s[2:].strip()
     key, _, value = body.partition(" ")
@@ -108,14 +117,18 @@ def parse_method_cards(lines):
 
 # @method collect_sources() -> list
 # @in    нет
-# @out   paths: list[Path] — отсортированные *.py из каталогов исходников
-# @does  Обходит существующие каталоги SOURCE_DIRS и собирает .py-файлы.
+# @out   paths: list[Path] — отсортированные исходники расширений
+# @out   SOURCE_EXTS (*.py, *.uasm, *.ubrk) из каталогов исходников
+# @does  Обходит существующие каталоги SOURCE_DIRS и собирает файлы
+# @does  расширений SOURCE_EXTS: Python-инструменты и исходники
+# @does  собственных языков (SPEC/L4-SELFHOST.txt, раздел 3).
 def collect_sources():
     paths = []
     for name in SOURCE_DIRS:
         base = ROOT / name
         if base.is_dir():
-            paths.extend(sorted(base.rglob("*.py")))
+            for pattern in SOURCE_EXTS:
+                paths.extend(sorted(base.rglob(pattern)))
     return paths
 
 
