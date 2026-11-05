@@ -1,0 +1,66 @@
+; @uadro
+; @file    src/l2/assemble.ubrk
+; @layer   L2
+; @branch  l2.uasm.assemble
+; @desc    Ассемблер uAsm — собственное воплощение Этапа 4: вход — текст
+; @desc    uAsm в stdin (KEY), выход — образ UVM в stdout (EMIT); код 0 —
+; @desc    успех, 16 — ошибка входа (SPEC/L4-SELFHOST.txt, разделы 4 и 5А).
+; @desc    Подшаг 1 (каркас и память): use-включение asmmem.ubrk даёт
+; @desc    раскладку ОЗУ и кирпичи чтения; вход читается целиком в буфер
+; @desc    источника 512 КиБ (readstep), вход сверх лимита — строка «вход
+; @desc    слишком большой» и код 16; пустой вход — пустой вывод, код 0.
+; @desc    Разбор строк, литералы, записи, символы и проходы — подшаги 2-7
+; @desc    (SPEC/L4-SELFHOST.txt, раздел 5А).
+use asmmem.ubrk
+
+; @method tbig ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «вход слишком большой» (UTF-8 + 0)
+; @does  Данные: текст диагностики переполнения буфера источника —
+; @does  единственная диагностика без номера строки (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А); печать — словом prints.
+text tbig "вход слишком большой"
+
+; @method biginput ( -- )
+; @in    нет
+; @out   нет; не возвращается: строка выводится в stdout, затем программа
+; @out   завершается кодом 16
+; @does  Диагностика переполнения буфера источника (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): печатает «вход слишком большой» с переводом строки
+; @does  и завершает программу словом QUIT (HALT 16 — ошибка входа
+; @does  инструмента, SPEC/L3-UBRICK.txt, раздел 4.1).
+; @depends tbig, prints, cr, QUIT
+: biginput
+  tbig prints cr QUIT ;
+
+; @method readstep ( cur -- cur' done )
+; @in    cur: слово — адрес следующего байта буфера источника
+; @out   cur': слово — адрес следующего байта после шага
+; @out   done: слово — 0: байт прочитан и записан в буфер; 1: EOF
+; @does  Один шаг чтения stdin в буфер источника (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): keyok читает байт; байт при наличии места (roomok) —
+; @does  storebyte пишет его, шаг возвращает 0; буфер полон — biginput
+; @does  (не возвращается); EOF — 1, курсор не меняется.
+; @depends keyok, roomok, storebyte, biginput
+: readstep
+  keyok
+  IF
+    OVER roomok
+    IF storebyte 0 ELSE DROP DROP biginput THEN
+  ELSE
+    1
+  THEN ;
+
+; @method main ( -- )
+; @in    нет (вход инструмента — байты stdin, KEY)
+; @out   нет (подшаг 1: вывод пустой; код завершения 0 — успех)
+; @does  Каркас ассемблера, подшаг 1 (SPEC/L4-SELFHOST.txt, раздел 5А):
+; @does  читает stdin целиком в буфер источника — курсор srcbase, шаги
+; @does  readstep до EOF (UNTIL), конец буфера снимается со стека, BYE —
+; @does  код 0; пустой вход — пустой вывод. Разбор строк и сборка образа
+; @does  — подшаги 2-7.
+; @depends srcbase, readstep, BYE
+: main
+  srcbase
+  BEGIN readstep UNTIL
+  DROP BYE ;
