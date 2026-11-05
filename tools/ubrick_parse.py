@@ -3,7 +3,7 @@
 # @layer   T0
 # @branch  t0.ubrick.parse
 # @desc    Разбор исходника uBrick в записи: определения слов «: ... ;»,
-# @desc    var, text, слова и литералы тел (SPEC/L3-UBRICK.txt v0.2,
+# @desc    var, text, слова и литералы тел (SPEC/L3-UBRICK.txt v0.3,
 # @desc    разделы 3 и 8); ошибки «uBrick: строка N: текст».
 
 """Разбор исходника uBrick v0.1 (ветвь t0.ubrick.parse).
