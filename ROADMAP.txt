@@ -170,15 +170,22 @@ image_file, FakeStream, patched_stdin, run_via_cli.
   до восьми аргументов на строку), join_lines (строки в текст с концевым
   переводом), disasm (образ -> текст; пустой образ — пустой текст);
   раунд-трип assemble(disasm(B)) == B покрыт тестами ветви.
+- t0.uasm.cli — командные режимы asm и dis (SPEC, раздел 9): parse_args
+  (разбор режима и путей через parse_asm_args/parse_dis_args),
+  read_text/read_image, write_bytes/write_text, run_asm/run_dis, main;
+  «python tools/uasm_cli.py asm ИСТОЧНИК.uasm ОБРАЗ.uvm» собирает текст
+  в образ, «python tools/uasm_cli.py dis ОБРАЗ.uvm [ТЕКСТ.uasm]»
+  дизассемблирует образ в файл или, без имени файла, в stdout; ошибки —
+  код выхода 2 и сообщение в stderr; раунд-трип asm -> dis -> asm через
+  CLI, включая сквозной запуск настоящим процессом, покрыт тестами
+  (26 тестов).
 
-Следующий малый шаг: Этап 2, ветвь t0.uasm.cli — командные режимы
-asm и dis (SPEC/L2-UASM.txt, раздел 9): «python tools/uasm_cli.py asm
-ИСТОЧНИК.uasm ОБРАЗ.uvm» собирает текст в образ, «python
-tools/uasm_cli.py dis ОБРАЗ.uvm [ТЕКСТ.uasm]» дизассемблирует образ
-в файл или, без имени файла, в stdout; ошибки — код выхода 2
-и сообщение в stderr. За ней — t0.uasm.integration: раунд-трип
-assemble(disasm(B)) == B и интеграционные программы как критерии
-готовности Этапа 2.
+Следующий малый шаг: Этап 2, ветвь t0.uasm.integration — закрытие
+Этапа 2: раунд-трип assemble(disasm(B)) == B (уже покрыт тестами
+t0.uasm.disasm и t0.uasm.cli), интеграционные программы «вывод символа»,
+«арифметика», «вложенные CALL/RET» пишутся исходниками .uasm, собираются
+uasm_cli и исполняются uvm_cli; по выполнении DoD Этап 2 закрывается
+и начинается Этап 3 (uBrick — сначала спецификация SPEC/L3-UBRICK.txt).
 
 Контракт обработчиков (действует, реализован в t0.uvm.decode/exec):
 к моменту вызова обработчика PC уже указывает на байт, следующий
@@ -272,3 +279,11 @@ assemble(disasm(B)) == B и интеграционные программы ка
   директивы DB до восьми аргументов на строку, пустой образ — пустой
   текст; раунд-трип assemble(disasm(B)) == B покрыт тестами (33 теста);
   следующий шаг — t0.uasm.cli (режимы asm и dis).
+- 2026-11-05 — Этап 2: закрыта ветвь t0.uasm.cli — командные режимы
+  asm и dis (tools/uasm_cli.py + tests/test_uasm_cli.py): сборка текста
+  uAsm в образ, дизассемблирование образа в файл или stdout, ошибки —
+  код выхода 2 и сообщение в stderr (кирпичи parse_args,
+  read_text/read_image, write_bytes/write_text, run_asm/run_dis,
+  main); раунд-трип asm -> dis -> asm через CLI, включая сквозной
+  запуск настоящим процессом; следующий шаг — t0.uasm.integration
+  (интеграционные программы .uasm, закрытие Этапа 2).
