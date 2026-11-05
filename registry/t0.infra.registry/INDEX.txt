@@ -1,0 +1,33 @@
+ИНДЕКС ВЕТВИ t0.infra.registry [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.infra.registry/<файл>.txt.
+
+- tools/check_limits.py — методов: 3
+  карточки: registry/t0.infra.registry/check_limits.txt
+  описание: Проверка лимита строк: каждый файл репозитория не длиннее
+            500 строк.
+- tools/registry_render.py — методов: 11
+  карточки: registry/t0.infra.registry/registry_render.txt
+  описание: Рендер реестра методов простым текстом: компактный индекс
+            registry/METHODS.txt, индексы ветвей
+            registry/<ветвь>/INDEX.txt и карточки по исходным файлам
+            (сканирование, план и запись — tools/registry_scan.py).
+- tools/registry_scan.py — методов: 14
+  карточки: registry/t0.infra.registry/registry_scan.txt
+  описание: Сканер реестра методов: чтение исходников, план (ветви и
+            имена карточек), запись и сверка registry/ на диске; рендер
+            текстов — tools/registry_render.py. Режим --check сверяет
+            реестр без записи.
+- tests/test_registry_scan.py — методов: 20
+  карточки: registry/t0.infra.registry/test_registry_scan.txt
+  описание: Тесты генератора реестра: разбор аннотаций «# @» и «; @»,
+            план карточек по исходным файлам (рендер и диск —
+            tests/test_registry_scan_render.py).
+- tests/test_registry_scan_render.py — методов: 25
+  карточки: registry/t0.infra.registry/test_registry_scan_render.txt
+  описание: Тесты рендера реестра (tools/registry_render.py): перенос по
+            словам, карточки, индекс ветви и компактный индекс верхнего
+            уровня, группировка плана; скан реального репозитория,
+            запись и сверка на диске — tools/registry_scan.py (разбор и
+            план — tests/test_registry_scan.py).

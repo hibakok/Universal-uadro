@@ -1,0 +1,16 @@
+ИНДЕКС ВЕТВИ t0.uasm.assemble [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uasm.assemble/<файл>.txt.
+
+- tools/uasm_assemble.py — методов: 6
+  карточки: registry/t0.uasm.assemble/uasm_assemble.txt
+  описание: Сборка текста uAsm в образ UVM двумя проходами: проход 1
+            назначает записям адреса и заполняет таблицу символов,
+            проход 2 кодирует записи в байты (SPEC/L2-UASM.txt, раздел
+            7).
+- tests/test_uasm_assemble.py — методов: 40
+  карточки: registry/t0.uasm.assemble/test_uasm_assemble.txt
+  описание: Тесты сборки текста uAsm в образ: деление на строки, ошибки
+            с номером строки, проходы 1 и 2, ссылки вперёд, метки и
+            константы, пустой текст (SPEC/L2-UASM.txt, раздел 7).

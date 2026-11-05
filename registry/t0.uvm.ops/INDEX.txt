@@ -1,0 +1,55 @@
+ИНДЕКС ВЕТВИ t0.uvm.ops [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uvm.ops/<файл>.txt.
+
+- tools/uvm_ops_arith.py — методов: 14
+  карточки: registry/t0.uvm.ops/uvm_ops_arith.txt
+  описание: Обработчики опкодов группы «арифметика и биты»: ADD, SUB,
+            MUL, UDIV, UMOD, NEG, SHL, SHR, SAR, AND, OR, XOR, INV
+            (SPEC/L0-UVM.txt, раздел 5).
+- tools/uvm_ops_cmp.py — методов: 7
+  карточки: registry/t0.uvm.ops/uvm_ops_cmp.txt
+  описание: Обработчики опкодов группы «сравнения»: EQ, NEQ, LTU, GTU,
+            LEU, GEU (SPEC/L0-UVM.txt, раздел 5).
+- tools/uvm_ops_jump.py — методов: 6
+  карточки: registry/t0.uvm.ops/uvm_ops_jump.txt
+  описание: Обработчики опкодов группы «переходы и остановка»: JMP, JZ,
+            JNZ, CALL, RET, HALT (SPEC/L0-UVM.txt, разделы 4-5).
+- tools/uvm_ops_mem.py — методов: 4
+  карточки: registry/t0.uvm.ops/uvm_ops_mem.txt
+  описание: Обработчики опкодов группы «память»: LOAD8, LOAD64, STORE8,
+            STORE64 (SPEC/L0-UVM.txt, раздел 5).
+- tools/uvm_ops_stack.py — методов: 8
+  карточки: registry/t0.uvm.ops/uvm_ops_stack.txt
+  описание: Обработчики опкодов группы «стек»: NOP, PUSH, DROP, DUP,
+            SWAP, OVER, ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
+- tools/uvm_ops_sys.py — методов: 3
+  карточки: registry/t0.uvm.ops/uvm_ops_sys.txt
+  описание: Обработчик опкода SYS и мост к узлу-хосту: SYS 0 — чтение
+            байта, SYS 1 — вывод байта (SPEC/L0-UVM.txt, раздел 6).
+- tests/test_uvm_ops_arith.py — методов: 20
+  карточки: registry/t0.uvm.ops/test_uvm_ops_arith.txt
+  описание: Тесты арифметических и побитовых обработчиков: ADD, SUB,
+            MUL, UDIV, UMOD, NEG, SHL, SHR, SAR, AND, OR, XOR, INV
+            (SPEC/L0-UVM.txt, раздел 5).
+- tests/test_uvm_ops_cmp.py — методов: 9
+  карточки: registry/t0.uvm.ops/test_uvm_ops_cmp.txt
+  описание: Тесты обработчиков сравнений: EQ, NEQ, LTU, GTU, LEU, GEU
+            (SPEC/L0-UVM.txt, раздел 5).
+- tests/test_uvm_ops_jump.py — методов: 14
+  карточки: registry/t0.uvm.ops/test_uvm_ops_jump.txt
+  описание: Тесты обработчиков переходов и остановки: JMP, JZ, JNZ,
+            CALL, RET, HALT (SPEC/L0-UVM.txt, разделы 4-5).
+- tests/test_uvm_ops_mem.py — методов: 9
+  карточки: registry/t0.uvm.ops/test_uvm_ops_mem.txt
+  описание: Тесты обработчиков памяти: LOAD8, LOAD64, STORE8, STORE64
+            (SPEC/L0-UVM.txt, раздел 5).
+- tests/test_uvm_ops_stack.py — методов: 12
+  карточки: registry/t0.uvm.ops/test_uvm_ops_stack.txt
+  описание: Тесты стековых обработчиков: NOP, PUSH, DROP, DUP, SWAP,
+            OVER, ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
+- tests/test_uvm_ops_sys.py — методов: 7
+  карточки: registry/t0.uvm.ops/test_uvm_ops_sys.txt
+  описание: Тесты системных вызовов: SYS 0 — чтение байта, SYS 1 — вывод
+            байта, неизвестный SYS (SPEC/L0-UVM.txt, раздел 6).

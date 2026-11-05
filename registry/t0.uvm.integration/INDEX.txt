@@ -1,0 +1,10 @@
+ИНДЕКС ВЕТВИ t0.uvm.integration [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uvm.integration/<файл>.txt.
+
+- tests/test_uvm_integration.py — методов: 9
+  карточки: registry/t0.uvm.integration/test_uvm_integration.txt
+  описание: Интеграционные программы Этапа 1: «вывод символа»,
+            арифметика, вложенные CALL/RET — образы исполняются целиком
+            через run_image и cli (SPEC/L0-UVM.txt, ROADMAP.txt Этап 1).

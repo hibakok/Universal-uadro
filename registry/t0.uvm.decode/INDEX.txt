@@ -1,0 +1,15 @@
+ИНДЕКС ВЕТВИ t0.uvm.decode [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uvm.decode/<файл>.txt.
+
+- tools/uvm_decode.py — методов: 2
+  карточки: registry/t0.uvm.decode/uvm_decode.txt
+  описание: Декодер инструкции UVM v0.1 по адресу: опкод, поле imm64
+            little-endian, адрес следующей инструкции (SPEC/L0-UVM.txt,
+            раздел 4).
+- tests/test_uvm_decode.py — методов: 11
+  карточки: registry/t0.uvm.decode/test_uvm_decode.txt
+  описание: Тесты декодера инструкций: опкод, поле imm64 little-endian,
+            адрес следующей инструкции, чистота decode_at, ловушки 6 и 7
+            (SPEC/L0-UVM.txt, разделы 3-5).

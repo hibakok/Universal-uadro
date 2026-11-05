@@ -1,0 +1,21 @@
+ИНДЕКС ВЕТВИ t0.ubrick.parse [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.ubrick.parse/<файл>.txt.
+
+- tools/ubrick_parse.py — методов: 23
+  карточки: registry/t0.ubrick.parse/ubrick_parse.txt
+  описание: Разбор исходника uBrick в записи: определения слов «: ...
+            ;», var, text, слова и литералы тел (SPEC/L3-UBRICK.txt
+            v0.3, разделы 3 и 8); ошибки «uBrick: строка N: текст».
+- tests/test_ubrick_parse.py — методов: 14
+  карточки: registry/t0.ubrick.parse/test_ubrick_parse.txt
+  описание: Тесты разбора uBrick: кирпичи строк, имён и строковых
+            литералов; записи успешного разбора — определения, var,
+            text, элементы тел (SPEC/L3-UBRICK.txt v0.2, разделы 3 и 6).
+- tests/test_ubrick_parse_errors.py — методов: 22
+  карточки: registry/t0.ubrick.parse/test_ubrick_parse_errors.txt
+  описание: Тесты текстов ошибок разбора uBrick с номерами строк: имена,
+            литералы, var/text, правила «;», конструкции, контекст,
+            конец текста и порядок ошибок (SPEC/L3-UBRICK.txt v0.2,
+            раздел 8).

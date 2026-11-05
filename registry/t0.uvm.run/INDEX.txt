@@ -1,0 +1,15 @@
+ИНДЕКС ВЕТВИ t0.uvm.run [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uvm.run/<файл>.txt.
+
+- tools/uvm_run.py — методов: 2
+  карточки: registry/t0.uvm.run/uvm_run.txt
+  описание: Цикл запуска UVM v0.1: шаги step до UvmHalt или UvmTrap,
+            приведение к коду завершения; кирпич run_image запускает
+            готовый образ (SPEC/L0-UVM.txt, Этап 1).
+- tests/test_uvm_run.py — методов: 13
+  карточки: registry/t0.uvm.run/test_uvm_run.txt
+  описание: Тесты цикла запуска: коды HALT, ловушки в цикле, переходы и
+            цикл JZ/JMP, вложенные CALL/RET, кирпич run_image
+            (SPEC/L0-UVM.txt, разделы 2-5).

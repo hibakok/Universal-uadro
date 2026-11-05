@@ -1,504 +1,89 @@
 РЕЕСТР МЕТОДОВ — ИНДЕКС
 
 Индекс генерируется tools/registry_scan.py; вручную не редактировать.
-Карточки методов исходного файла — registry/<ветвь>/<файл>.txt.
+Файлы и описания ветви — registry/<ветвь>/INDEX.txt, карточки
+методов исходного файла — registry/<ветвь>/<файл>.txt.
 
-ВЕТВЬ l2.uasm.assemble [слой L2] — методов: 15
+ВЕТВЬ l2.uasm.assemble [слой L2] — файлов: 5, методов: 85
+  индекс: registry/l2.uasm.assemble/INDEX.txt
 
-- src/l2/asmmem.ubrk — методов: 11
-  карточки: registry/l2.uasm.assemble/asmmem.txt
-  описание: Ассемблер uAsm — память инструмента: use-включение главного
-            файла src/l2/assemble.ubrk (SPEC/L4-SELFHOST.txt, раздел
-            5А). Раскладка ОЗУ — восемь слов-адресов четырёх буферов;
-            кирпичи чтения stdin в буфер источника: keyok, roomok,
-            storebyte.
-- src/l2/assemble.ubrk — методов: 4
-  карточки: registry/l2.uasm.assemble/assemble.txt
-  описание: Ассемблер uAsm — собственное воплощение Этапа 4: вход —
-            текст uAsm в stdin (KEY), выход — образ UVM в stdout (EMIT);
-            код 0 — успех, 16 — ошибка входа (SPEC/L4-SELFHOST.txt,
-            разделы 4 и 5А). Подшаг 1 (каркас и память): use-включение
-            asmmem.ubrk даёт раскладку ОЗУ и кирпичи чтения; вход
-            читается целиком в буфер источника 512 КиБ (readstep), вход
-            сверх лимита — строка «вход слишком большой» и код 16;
-            пустой вход — пустой вывод, код 0. Разбор строк, литералы,
-            записи, символы и проходы — подшаги 2-7
-            (SPEC/L4-SELFHOST.txt, раздел 5А).
+ВЕТВЬ l2.uasm.disasm [слой L2] — файлов: 3, методов: 74
+  индекс: registry/l2.uasm.disasm/INDEX.txt
 
-ВЕТВЬ l2.uasm.disasm [слой L2] — методов: 74
+ВЕТВЬ t0.uasm.integration [слой L2] — файлов: 4, методов: 12
+  индекс: registry/t0.uasm.integration/INDEX.txt
 
-- src/l2/disasm.ubrk — методов: 24
-  карточки: registry/l2.uasm.disasm/disasm.txt
-  описание: Дизассемблер uAsm — собственное воплощение Этапа 4: вход —
-            образ UVM в stdin (KEY), выход — текст uAsm в stdout (EMIT),
-            код завершения 0 (SPEC/L4-SELFHOST.txt, разделы 4-5).
-            Подшаги 1-3: каркас, таблица мнемоник, поле imm64, печать
-            десятичного значения и хвост DB. Опкод без поля — строка
-            «МНЕМОНИКА»; опкод с полем imm64 — строка «МНЕМОНИКА
-            значение» (десятичное слово 0..2^64-1); неизвестный код и
-            обрыв поля — останов декодирования: с опкода останова до
-            конца входа данные печатаются директивами DB по восемь
-            аргументов на строку. Золотой набор SPEC/L4-SELFHOST.txt
-            (раздел 6) пройден (tests/test_l2_disasm_gold.py): вывод
-            равен эталону disasm байт в байт на каждом образе набора,
-            раунд-трип assemble(disasm(B)) == B на собственном выводе;
-            сквозной конвейер настоящими процессами. Ветвь закрыта.
-- tests/test_l2_disasm.py — методов: 24
-  карточки: registry/l2.uasm.disasm/test_l2_disasm.txt
-  описание: Тесты подшагов 1-3 ветви l2.uasm.disasm: каркас, таблица
-            мнемоник, поле imm64, печать десятичного значения и хвост DB
-            (src/l2/disasm.ubrk): сборка настоящей командой compile,
-            пустой вход, опкоды без imm64 — по строке на мнемонику,
-            инструкции с imm64 — золотая сверка с эталоном disasm байт в
-            байт, хвост DB с опкода останова (обрыв поля, неизвестный
-            опкод, длины хвоста, устаревшее iv/ii) — эталон байт в байт,
-            сквозной прогон настоящими процессами.
-- tests/test_l2_disasm_gold.py — методов: 26
-  карточки: registry/l2.uasm.disasm/test_l2_disasm_gold.txt
-  описание: Подшаг 4 ветви l2.uasm.disasm — золотой набор и закрытие
-            ветви: полный золотой набор SPEC/L4-SELFHOST.txt (раздел 6)
-            одним файлом: пустой вход, каждый опкод v0.1 отдельно,
-            обрывы поля imm64, хвосты данных, смешанные программы,
-            образы программ этапов 1-2; для каждого золотого образа —
-            вывод собственного дизассемблера равен эталону disasm байт в
-            байт и раунд-трип assemble(disasm(B)) == B на собственном
-            выводе; TestProcess — сквозной конвейер настоящими
-            процессами.
+ВЕТВЬ t0.ubrick.integration [слой L3] — файлов: 4, методов: 10
+  индекс: registry/t0.ubrick.integration/INDEX.txt
 
-ВЕТВЬ t0.uasm.integration [слой L2] — методов: 12
+ВЕТВЬ t0.infra.registry [слой T0] — файлов: 5, методов: 73
+  индекс: registry/t0.infra.registry/INDEX.txt
 
-- src/arith.uasm — методов: 0
-  карточки: registry/t0.uasm.integration/arith.txt
-  описание: Программа «арифметика»: (2+3)*4 = 20 на стеке данных;
-            константы a, b, k назначает проход 1 ассемблера
-            (SPEC/L2-UASM.txt, раздел 3); образ байт в байт совпадает с
-            эталоном Этапа 1 — tests/test_uvm_integration.py,
-            prog_arithmetic.
-- src/hello.uasm — методов: 0
-  карточки: registry/t0.uasm.integration/hello.txt
-  описание: Программа «вывод символа»: два SYS 1 выводят "Hi" в stdout,
-            HALT 0 завершает (SPEC/L0-UVM.txt, раздел 6); образ байт в
-            байт совпадает с эталоном Этапа 1 —
-            tests/test_uvm_integration.py, prog_char_output.
-- src/nested_calls.uasm — методов: 0
-  карточки: registry/t0.uasm.integration/nested_calls.txt
-  описание: Программа «вложенные CALL/RET»: main вызывает sub1, та —
-            sub2; подпрограммы оставляют на стеке 111 и 222, оба RET
-            возвращают управление по цепочке; вывод "!", HALT 0. Адреса
-            переходов — метки прохода 1 (SPEC/L2-UASM.txt, раздел 3),
-            NOP-выравнивание эталона Этапа 1 не нужно; поведение —
-            tests/test_uvm_integration.py, prog_nested_calls.
-- tests/test_uasm_integration.py — методов: 12
-  карточки: registry/t0.uasm.integration/test_uasm_integration.txt
-  описание: Интеграционные программы Этапа 2: исходники src/*.uasm
-            собираются командой uasm_cli asm и исполняются uvm_cli;
-            «вывод символа» и «арифметика» — байт в байт с эталонами
-            Этапа 1, «вложенные CALL/RET» — метками, с тем же поведением
-            (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2).
+ВЕТВЬ t0.infra.tests [слой T0] — файлов: 3, методов: 19
+  индекс: registry/t0.infra.tests/INDEX.txt
 
-ВЕТВЬ t0.ubrick.integration [слой L3] — методов: 10
+ВЕТВЬ t0.uasm.assemble [слой T0] — файлов: 2, методов: 46
+  индекс: registry/t0.uasm.assemble/INDEX.txt
 
-- src/arith.ubrk — методов: 0
-  карточки: registry/t0.ubrick.integration/arith.txt
-  описание: Программа «арифметика»: (2+3)*4 = 20 численными литералами и
-            примитивами ADD/MUL (SPEC/L3-UBRICK.txt, разделы 3 и 4.1);
-            результат остаётся на стеке данных — поведение эталона
-            src/arith.uasm Этапа 2: стек [20], без вывода, код 0.
-- src/hello.ubrk — методов: 0
-  карточки: registry/t0.ubrick.integration/hello.txt
-  описание: Программа «вывод символа»: строка данных text и производное
-            слово prints (SPEC/L3-UBRICK.txt, разделы 6 и 4.2); вывод
-            "Hi", код 0 — поведение эталона src/hello.uasm Этапа 2
-            (образ содержит весь словарь, сверяется поведение).
-- src/nested_calls.ubrk — методов: 0
-  карточки: registry/t0.ubrick.integration/nested_calls.txt
-  описание: Программа «вложенные вычисления»: var-ячейки x/y/i, вызовы
-            sub1/sub2 глубиной два, счётный цикл BEGIN/UNTIL с
-            производным словом dec (SPEC/L3-UBRICK.txt, разделы 4.2, 5 и
-            6); поведение эталона src/nested_calls.uasm Этапа 2: вывод
-            "!", стек [111, 222], пустой RS, код 0.
-- tests/test_ubrick_integration.py — методов: 10
-  карточки: registry/t0.ubrick.integration/test_ubrick_integration.txt
-  описание: Интеграционные программы Этапа 3: исходники src/*.ubrk
-            собираются командой ubrick_cli compile и исполняются
-            uvm_cli; поведение — как у эталонов Этапов 1-2
-            (SPEC/L3-UBRICK.txt, ROADMAP.txt Этап 3).
+ВЕТВЬ t0.uasm.cli [слой T0] — файлов: 2, методов: 44
+  индекс: registry/t0.uasm.cli/INDEX.txt
 
-ВЕТВЬ t0.infra.registry [слой T0] — методов: 69
+ВЕТВЬ t0.uasm.disasm [слой T0] — файлов: 2, методов: 42
+  индекс: registry/t0.uasm.disasm/INDEX.txt
 
-- tools/check_limits.py — методов: 3
-  карточки: registry/t0.infra.registry/check_limits.txt
-  описание: Проверка лимита строк: каждый файл репозитория не длиннее
-            500 строк.
-- tools/registry_scan.py — методов: 24
-  карточки: registry/t0.infra.registry/registry_scan.txt
-  описание: Генератор реестра методов: индекс registry/METHODS.txt и
-            карточки по исходным файлам registry/<ветвь>/<файл>.txt.
-            Режим --check сверяет реестр без записи.
-- tests/test_registry_scan.py — методов: 21
-  карточки: registry/t0.infra.registry/test_registry_scan.txt
-  описание: Тесты генератора реестра: разбор аннотаций «# @» и «; @»,
-            план карточек по исходным файлам (рендер и диск —
-            tests/test_registry_scan_render.py).
-- tests/test_registry_scan_render.py — методов: 21
-  карточки: registry/t0.infra.registry/test_registry_scan_render.txt
-  описание: Тесты генератора реестра: рендер простым текстом, сверка и
-            очистка на диске (разбор и план —
-            tests/test_registry_scan.py).
+ВЕТВЬ t0.uasm.encode [слой T0] — файлов: 3, методов: 46
+  индекс: registry/t0.uasm.encode/INDEX.txt
 
-ВЕТВЬ t0.infra.tests [слой T0] — методов: 19
+ВЕТВЬ t0.uasm.lex [слой T0] — файлов: 2, методов: 25
+  индекс: registry/t0.uasm.lex/INDEX.txt
 
-- tests/__init__.py — методов: 0
-  карточки: registry/t0.infra.tests/__init__.txt
-  описание: Пакет тестов: делает каталог tests импортируемым для
-            unittest.
-- tests/test_uvm_testkit.py — методов: 7
-  карточки: registry/t0.infra.tests/test_uvm_testkit.txt
-  описание: Тесты кирпичей тест-набора: run_with_io — прогон образа без
-            процесса (эхо-фильтр до конца ввода, коды завершения,
-            частичный вывод до ловушки, восстановление потоков) и
-            проброс результата patched_stdin.
-- tests/uvm_testkit.py — методов: 12
-  карточки: registry/t0.infra.tests/uvm_testkit.txt
-  описание: Общий тест-набор UVM: компактные машины, снимки стека,
-            сборка образов программ (в машину и байтами в файл), чтение
-            кодов ловушек и остановки, заглушки потоков хоста, прогон
-            образов через cli и прогон без процесса с подменёнными
-            stdin/stdout (run_with_io) — для тестов ветвей t0.uvm.* и
-            собственных инструментов Этапа 4 (SPEC/L4-SELFHOST.txt).
+ВЕТВЬ t0.uasm.line [слой T0] — файлов: 3, методов: 39
+  индекс: registry/t0.uasm.line/INDEX.txt
 
-ВЕТВЬ t0.uasm.assemble [слой T0] — методов: 46
+ВЕТВЬ t0.uasm.symbols [слой T0] — файлов: 2, методов: 8
+  индекс: registry/t0.uasm.symbols/INDEX.txt
 
-- tools/uasm_assemble.py — методов: 6
-  карточки: registry/t0.uasm.assemble/uasm_assemble.txt
-  описание: Сборка текста uAsm в образ UVM двумя проходами: проход 1
-            назначает записям адреса и заполняет таблицу символов,
-            проход 2 кодирует записи в байты (SPEC/L2-UASM.txt, раздел
-            7).
-- tests/test_uasm_assemble.py — методов: 40
-  карточки: registry/t0.uasm.assemble/test_uasm_assemble.txt
-  описание: Тесты сборки текста uAsm в образ: деление на строки, ошибки
-            с номером строки, проходы 1 и 2, ссылки вперёд, метки и
-            константы, пустой текст (SPEC/L2-UASM.txt, раздел 7).
+ВЕТВЬ t0.ubrick.build [слой T0] — файлов: 2, методов: 49
+  индекс: registry/t0.ubrick.build/INDEX.txt
 
-ВЕТВЬ t0.uasm.cli [слой T0] — методов: 44
+ВЕТВЬ t0.ubrick.cli [слой T0] — файлов: 2, методов: 36
+  индекс: registry/t0.ubrick.cli/INDEX.txt
 
-- tools/uasm_cli.py — методов: 11
-  карточки: registry/t0.uasm.cli/uasm_cli.txt
-  описание: Командные режимы uAsm: asm — сборка текста в образ, dis —
-            дизассемблирование образа в файл или stdout
-            (SPEC/L2-UASM.txt, раздел 9).
-- tests/test_uasm_cli.py — методов: 33
-  карточки: registry/t0.uasm.cli/test_uasm_cli.txt
-  описание: Тесты командных режимов uAsm: разбор аргументов, чтение
-            исходников и запись результата, режимы asm и dis, ошибки с
-            кодом 2 и сообщением в stderr, раунд-трип asm -> dis -> asm
-            через CLI и сквозной запуск настоящим процессом
-            (SPEC/L2-UASM.txt, раздел 9).
+ВЕТВЬ t0.ubrick.compile [слой T0] — файлов: 2, методов: 26
+  индекс: registry/t0.ubrick.compile/INDEX.txt
 
-ВЕТВЬ t0.uasm.disasm [слой T0] — методов: 42
+ВЕТВЬ t0.ubrick.dict [слой T0] — файлов: 2, методов: 40
+  индекс: registry/t0.ubrick.dict/INDEX.txt
 
-- tools/uasm_disasm.py — методов: 6
-  карточки: registry/t0.uasm.disasm/uasm_disasm.txt
-  описание: Дизассемблер образа UVM: линейное чтение с адреса 0, по
-            одной инструкции на строку, хвост данных — директивами DB до
-            восьми аргументов на строку (SPEC/L2-UASM.txt, раздел 8).
-- tests/test_uasm_disasm.py — методов: 36
-  карточки: registry/t0.uasm.disasm/test_uasm_disasm.txt
-  описание: Тесты дизассемблера образа: чтение imm64, строка инструкции,
-            шаг декодирования, хвост данных директивами DB, пустой
-            образ, раунд-трип assemble(disasm(B)) == B
-            (SPEC/L2-UASM.txt, раздел 8).
+ВЕТВЬ t0.ubrick.parse [слой T0] — файлов: 3, методов: 59
+  индекс: registry/t0.ubrick.parse/INDEX.txt
 
-ВЕТВЬ t0.uasm.encode [слой T0] — методов: 46
+ВЕТВЬ t0.ubrick.source [слой T0] — файлов: 2, методов: 38
+  индекс: registry/t0.ubrick.source/INDEX.txt
 
-- tools/uasm_encode.py — методов: 9
-  карточки: registry/t0.uasm.encode/uasm_encode.txt
-  описание: Кодирование записей uAsm в байты: слово little-endian с
-            оборачиванием отрицательных, байт DB, разрешение операнда
-            (литерал или имя), инструкции и директивы данных, размер
-            записи для адресов прохода 1 (SPEC/L2-UASM.txt, разделы
-            4-7).
-- tests/test_uasm_encode.py — методов: 14
-  карточки: registry/t0.uasm.encode/test_uasm_encode.txt
-  описание: Тесты кирпичей кодирования значений: слово с оборачиванием
-            отрицательных, слово little-endian, байт DB, разрешение
-            операнда — литерал или имя (SPEC/L2-UASM.txt, разделы 4-6).
-- tests/test_uasm_encode_rec.py — методов: 23
-  карточки: registry/t0.uasm.encode/test_uasm_encode_rec.txt
-  описание: Тесты кодирования записей uAsm: инструкции (опкод и поле
-            imm64), директивы DB/DW, размер записи для прохода 1 и
-            запись целиком (SPEC/L2-UASM.txt, разделы 5-7).
+ВЕТВЬ t0.uvm.cli [слой T0] — файлов: 2, методов: 28
+  индекс: registry/t0.uvm.cli/INDEX.txt
 
-ВЕТВЬ t0.uasm.lex [слой T0] — методов: 25
+ВЕТВЬ t0.uvm.core [слой T0] — файлов: 2, методов: 49
+  индекс: registry/t0.uvm.core/INDEX.txt
 
-- tools/uasm_lex.py — методов: 9
-  карточки: registry/t0.uasm.lex/uasm_lex.txt
-  описание: Лексические кирпичи uAsm: числовые литералы (десятичные,
-            шестнадцатеричные, двоичные, символьные, с минусом), имена и
-            строковые литералы (SPEC/L2-UASM.txt, разделы 3-4).
-- tests/test_uasm_lex.py — методов: 16
-  карточки: registry/t0.uasm.lex/test_uasm_lex.txt
-  описание: Тесты лексических кирпичей uAsm: числовые литералы всех форм
-            и минус, диапазон литералов, имена, строковые литералы и
-            escape (SPEC/L2-UASM.txt, разделы 3-4).
+ВЕТВЬ t0.uvm.decode [слой T0] — файлов: 2, методов: 13
+  индекс: registry/t0.uvm.decode/INDEX.txt
 
-ВЕТВЬ t0.uasm.line [слой T0] — методов: 39
+ВЕТВЬ t0.uvm.exec [слой T0] — файлов: 2, методов: 12
+  индекс: registry/t0.uvm.exec/INDEX.txt
 
-- tools/uasm_line.py — методов: 12
-  карточки: registry/t0.uasm.line/uasm_line.txt
-  описание: Разбор одной строки uAsm в запись: метка, константа,
-            директива данных, инструкция, пустая строка или комментарий;
-            порядок разбора — SPEC/L2-UASM.txt, раздел 7.
-- tests/test_uasm_line.py — методов: 10
-  карточки: registry/t0.uasm.line/test_uasm_line.txt
-  описание: Тесты кирпичей подготовки строки uAsm: поиск символа вне
-            кавычек, комментарий, очистка краёв, знак «=», первое слово,
-            разбиение на слова (SPEC/L2-UASM.txt, разделы 2 и 7).
-- tests/test_uasm_line_parse.py — методов: 17
-  карточки: registry/t0.uasm.line/test_uasm_line_parse.txt
-  описание: Тесты разбора строки uAsm в запись: пустые строки, метки,
-            константы, инструкции, директивы данных, комментарии и все
-            тексты ошибок (SPEC/L2-UASM.txt, разделы 2-7).
+ВЕТВЬ t0.uvm.integration [слой T0] — файлов: 1, методов: 9
+  индекс: registry/t0.uvm.integration/INDEX.txt
 
-ВЕТВЬ t0.uasm.symbols [слой T0] — методов: 8
+ВЕТВЬ t0.uvm.ops [слой T0] — файлов: 12, методов: 113
+  индекс: registry/t0.uvm.ops/INDEX.txt
 
-- tools/uasm_symbols.py — методов: 3
-  карточки: registry/t0.uasm.symbols/uasm_symbols.txt
-  описание: Таблица символов uAsm: имя -> значение; единое пространство
-            имён для меток и констант; повторное определение имени —
-            ошибка (SPEC/L2-UASM.txt, разделы 3 и 7).
-- tests/test_uasm_symbols.py — методов: 5
-  карточки: registry/t0.uasm.symbols/test_uasm_symbols.txt
-  описание: Тесты таблицы символов uAsm: создание, выборка, определение,
-            повторное определение имени, единое пространство имён
-            (SPEC/L2-UASM.txt, раздел 3).
+ВЕТВЬ t0.uvm.run [слой T0] — файлов: 2, методов: 15
+  индекс: registry/t0.uvm.run/INDEX.txt
 
-ВЕТВЬ t0.ubrick.build [слой T0] — методов: 48
+ВЕТВЬ t0.uvm.table [слой T0] — файлов: 2, методов: 16
+  индекс: registry/t0.uvm.table/INDEX.txt
 
-- tools/ubrick_build.py — методов: 13
-  карточки: registry/t0.ubrick.build/ubrick_build.txt
-  описание: Сборка программы uBrick: пролог, производные слова словаря,
-            определения и данные исходника в текст uAsm и образ UVM
-            (SPEC/L3-UBRICK.txt, раздел 7).
-- tests/test_ubrick_build.py — методов: 35
-  карточки: registry/t0.ubrick.build/test_ubrick_build.txt
-  описание: Тесты сборки программы uBrick: кирпичи пролога, слов и
-            данных, части текста uAsm, порядок частей и счётчик меток
-            программы, поведение эталонных программ на UVM
-            (SPEC/L3-UBRICK.txt, раздел 7).
-
-ВЕТВЬ t0.ubrick.cli [слой T0] — методов: 36
-
-- tools/ubrick_cli.py — методов: 9
-  карточки: registry/t0.ubrick.cli/ubrick_cli.txt
-  описание: Командный режим uBrick: compile — чтение исходника, склейка
-            use-включений (загрузчик t0.ubrick.source, v0.3), разбор,
-            сборка образа UVM и запись результата; --asm сохраняет
-            промежуточный текст uAsm (SPEC/L3-UBRICK.txt, раздел 9).
-- tests/test_ubrick_cli.py — методов: 27
-  карточки: registry/t0.ubrick.cli/test_ubrick_cli.txt
-  описание: Тесты командного режима uBrick: разбор аргументов с флагом
-            --asm, чтение исходника и запись результата, режим compile,
-            ошибки с кодом 2 и сообщением в stderr, сквозной запуск
-            настоящим процессом (compile, затем uvm_cli)
-            (SPEC/L3-UBRICK.txt, раздел 9).
-
-ВЕТВЬ t0.ubrick.compile [слой T0] — методов: 26
-
-- tools/ubrick_compile.py — методов: 6
-  карточки: registry/t0.ubrick.compile/ubrick_compile.txt
-  описание: Компиляция тела определения uBrick в строки uAsm: слова —
-            инструкции и CALL, литералы — PUSH imm, конструкции —
-            переходы со служебными метками _L<n> (SPEC/L3-UBRICK.txt,
-            разделы 2, 5 и 7).
-- tests/test_ubrick_compile.py — методов: 20
-  карточки: registry/t0.ubrick.compile/test_ubrick_compile.txt
-  описание: Тесты компиляции тел uBrick: кирпичи меток, слов и
-            литералов; каждая конструкция, вложенность, полные тела и
-            общий счётчик (SPEC/L3-UBRICK.txt, разделы 2, 5 и 7).
-
-ВЕТВЬ t0.ubrick.dict [слой T0] — методов: 40
-
-- tools/ubrick_dict.py — методов: 8
-  карточки: registry/t0.ubrick.dict/ubrick_dict.txt
-  описание: Словарь uBrick v0.1: примитивы и псевдонимы (имя -> одна
-            инструкция uAsm), производные слова с телами словами uBrick
-            и управляющие конструкции (SPEC/L3-UBRICK.txt, разделы 4-5).
-- tests/test_ubrick_dict.py — методов: 32
-  карточки: registry/t0.ubrick.dict/test_ubrick_dict.txt
-  описание: Тесты словаря uBrick v0.1: примитивы, псевдонимы,
-            производные слова, конструкции, поиск по имени и списки слов
-            (SPEC/L3-UBRICK.txt, разделы 4-5).
-
-ВЕТВЬ t0.ubrick.parse [слой T0] — методов: 59
-
-- tools/ubrick_parse.py — методов: 23
-  карточки: registry/t0.ubrick.parse/ubrick_parse.txt
-  описание: Разбор исходника uBrick в записи: определения слов «: ...
-            ;», var, text, слова и литералы тел (SPEC/L3-UBRICK.txt
-            v0.3, разделы 3 и 8); ошибки «uBrick: строка N: текст».
-- tests/test_ubrick_parse.py — методов: 14
-  карточки: registry/t0.ubrick.parse/test_ubrick_parse.txt
-  описание: Тесты разбора uBrick: кирпичи строк, имён и строковых
-            литералов; записи успешного разбора — определения, var,
-            text, элементы тел (SPEC/L3-UBRICK.txt v0.2, разделы 3 и 6).
-- tests/test_ubrick_parse_errors.py — методов: 22
-  карточки: registry/t0.ubrick.parse/test_ubrick_parse_errors.txt
-  описание: Тесты текстов ошибок разбора uBrick с номерами строк: имена,
-            литералы, var/text, правила «;», конструкции, контекст,
-            конец текста и порядок ошибок (SPEC/L3-UBRICK.txt v0.2,
-            раздел 8).
-
-ВЕТВЬ t0.ubrick.source [слой T0] — методов: 38
-
-- tools/ubrick_source.py — методов: 12
-  карточки: registry/t0.ubrick.source/ubrick_source.txt
-  описание: Загрузчик исходников uBrick: оператор use — многофайловые
-            исходники склеиваются в один текст со сквозной нумерацией
-            строк (SPEC/L3-UBRICK.txt, v0.3, раздел 3); ошибки
-            загрузчика предшествуют ошибкам разбора.
-- tests/test_ubrick_source.py — методов: 26
-  карточки: registry/t0.ubrick.source/test_ubrick_source.txt
-  описание: Тесты загрузчика исходников uBrick: оператор use
-            (SPEC/L3-UBRICK.txt, v0.3) — склейка файлов, сквозная
-            нумерация строк, каталоги включений, состояние определения,
-            ошибки загрузчика, сборка и запуск многофайловой программы.
-
-ВЕТВЬ t0.uvm.cli [слой T0] — методов: 28
-
-- tools/uvm_cli.py — методов: 5
-  карточки: registry/t0.uvm.cli/uvm_cli.txt
-  описание: Запуск образа UVM из файла: разбор аргументов, чтение
-            образа, исполнение run_image, код завершения UVM — в код
-            выхода процесса (SPEC/L0-UVM.txt, Этап 1).
-- tests/test_uvm_cli.py — методов: 23
-  карточки: registry/t0.uvm.cli/test_uvm_cli.txt
-  описание: Тесты запуска образа из файла: разбор аргументов и размеров,
-            чтение файла, коды HALT и ловушек в коде выхода, ошибки
-            запуска, сквозной запуск настоящим процессом
-            (SPEC/L0-UVM.txt, разделы 2-3).
-
-ВЕТВЬ t0.uvm.core [слой T0] — методов: 49
-
-- tools/uvm_core.py — методов: 19
-  карточки: registry/t0.uvm.core/uvm_core.txt
-  описание: Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS
-            (SPEC/L0-UVM.txt, Этап 1).
-- tests/test_uvm_core.py — методов: 30
-  карточки: registry/t0.uvm.core/test_uvm_core.txt
-  описание: Тесты ядра UVM: слова, ловушки, остановка, ОЗУ, стеки DS/RS
-            и загрузка образа.
-
-ВЕТВЬ t0.uvm.decode [слой T0] — методов: 13
-
-- tools/uvm_decode.py — методов: 2
-  карточки: registry/t0.uvm.decode/uvm_decode.txt
-  описание: Декодер инструкции UVM v0.1 по адресу: опкод, поле imm64
-            little-endian, адрес следующей инструкции (SPEC/L0-UVM.txt,
-            раздел 4).
-- tests/test_uvm_decode.py — методов: 11
-  карточки: registry/t0.uvm.decode/test_uvm_decode.txt
-  описание: Тесты декодера инструкций: опкод, поле imm64 little-endian,
-            адрес следующей инструкции, чистота decode_at, ловушки 6 и 7
-            (SPEC/L0-UVM.txt, разделы 3-5).
-
-ВЕТВЬ t0.uvm.exec [слой T0] — методов: 12
-
-- tools/uvm_exec.py — методов: 1
-  карточки: registry/t0.uvm.exec/uvm_exec.txt
-  описание: Шаг исполнения UVM v0.1: декодировать инструкцию по PC и
-            вызвать её обработчик (SPEC/L0-UVM.txt, Этап 1).
-- tests/test_uvm_exec.py — методов: 11
-  карточки: registry/t0.uvm.exec/test_uvm_exec.txt
-  описание: Тесты шага исполнения: декодирование по PC и вызов
-            обработчика всех групп опкодов, HALT, ловушки 6, 7, 8
-            (SPEC/L0-UVM.txt).
-
-ВЕТВЬ t0.uvm.integration [слой T0] — методов: 9
-
-- tests/test_uvm_integration.py — методов: 9
-  карточки: registry/t0.uvm.integration/test_uvm_integration.txt
-  описание: Интеграционные программы Этапа 1: «вывод символа»,
-            арифметика, вложенные CALL/RET — образы исполняются целиком
-            через run_image и cli (SPEC/L0-UVM.txt, ROADMAP.txt Этап 1).
-
-ВЕТВЬ t0.uvm.ops [слой T0] — методов: 113
-
-- tools/uvm_ops_arith.py — методов: 14
-  карточки: registry/t0.uvm.ops/uvm_ops_arith.txt
-  описание: Обработчики опкодов группы «арифметика и биты»: ADD, SUB,
-            MUL, UDIV, UMOD, NEG, SHL, SHR, SAR, AND, OR, XOR, INV
-            (SPEC/L0-UVM.txt, раздел 5).
-- tools/uvm_ops_cmp.py — методов: 7
-  карточки: registry/t0.uvm.ops/uvm_ops_cmp.txt
-  описание: Обработчики опкодов группы «сравнения»: EQ, NEQ, LTU, GTU,
-            LEU, GEU (SPEC/L0-UVM.txt, раздел 5).
-- tools/uvm_ops_jump.py — методов: 6
-  карточки: registry/t0.uvm.ops/uvm_ops_jump.txt
-  описание: Обработчики опкодов группы «переходы и остановка»: JMP, JZ,
-            JNZ, CALL, RET, HALT (SPEC/L0-UVM.txt, разделы 4-5).
-- tools/uvm_ops_mem.py — методов: 4
-  карточки: registry/t0.uvm.ops/uvm_ops_mem.txt
-  описание: Обработчики опкодов группы «память»: LOAD8, LOAD64, STORE8,
-            STORE64 (SPEC/L0-UVM.txt, раздел 5).
-- tools/uvm_ops_stack.py — методов: 8
-  карточки: registry/t0.uvm.ops/uvm_ops_stack.txt
-  описание: Обработчики опкодов группы «стек»: NOP, PUSH, DROP, DUP,
-            SWAP, OVER, ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
-- tools/uvm_ops_sys.py — методов: 3
-  карточки: registry/t0.uvm.ops/uvm_ops_sys.txt
-  описание: Обработчик опкода SYS и мост к узлу-хосту: SYS 0 — чтение
-            байта, SYS 1 — вывод байта (SPEC/L0-UVM.txt, раздел 6).
-- tests/test_uvm_ops_arith.py — методов: 20
-  карточки: registry/t0.uvm.ops/test_uvm_ops_arith.txt
-  описание: Тесты арифметических и побитовых обработчиков: ADD, SUB,
-            MUL, UDIV, UMOD, NEG, SHL, SHR, SAR, AND, OR, XOR, INV
-            (SPEC/L0-UVM.txt, раздел 5).
-- tests/test_uvm_ops_cmp.py — методов: 9
-  карточки: registry/t0.uvm.ops/test_uvm_ops_cmp.txt
-  описание: Тесты обработчиков сравнений: EQ, NEQ, LTU, GTU, LEU, GEU
-            (SPEC/L0-UVM.txt, раздел 5).
-- tests/test_uvm_ops_jump.py — методов: 14
-  карточки: registry/t0.uvm.ops/test_uvm_ops_jump.txt
-  описание: Тесты обработчиков переходов и остановки: JMP, JZ, JNZ,
-            CALL, RET, HALT (SPEC/L0-UVM.txt, разделы 4-5).
-- tests/test_uvm_ops_mem.py — методов: 9
-  карточки: registry/t0.uvm.ops/test_uvm_ops_mem.txt
-  описание: Тесты обработчиков памяти: LOAD8, LOAD64, STORE8, STORE64
-            (SPEC/L0-UVM.txt, раздел 5).
-- tests/test_uvm_ops_stack.py — методов: 12
-  карточки: registry/t0.uvm.ops/test_uvm_ops_stack.txt
-  описание: Тесты стековых обработчиков: NOP, PUSH, DROP, DUP, SWAP,
-            OVER, ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
-- tests/test_uvm_ops_sys.py — методов: 7
-  карточки: registry/t0.uvm.ops/test_uvm_ops_sys.txt
-  описание: Тесты системных вызовов: SYS 0 — чтение байта, SYS 1 — вывод
-            байта, неизвестный SYS (SPEC/L0-UVM.txt, раздел 6).
-
-ВЕТВЬ t0.uvm.run [слой T0] — методов: 15
-
-- tools/uvm_run.py — методов: 2
-  карточки: registry/t0.uvm.run/uvm_run.txt
-  описание: Цикл запуска UVM v0.1: шаги step до UvmHalt или UvmTrap,
-            приведение к коду завершения; кирпич run_image запускает
-            готовый образ (SPEC/L0-UVM.txt, Этап 1).
-- tests/test_uvm_run.py — методов: 13
-  карточки: registry/t0.uvm.run/test_uvm_run.txt
-  описание: Тесты цикла запуска: коды HALT, ловушки в цикле, переходы и
-            цикл JZ/JMP, вложенные CALL/RET, кирпич run_image
-            (SPEC/L0-UVM.txt, разделы 2-5).
-
-ВЕТВЬ t0.uvm.table [слой T0] — методов: 16
-
-- tools/uvm_table.py — методов: 6
-  карточки: registry/t0.uvm.table/uvm_table.txt
-  описание: Таблица опкодов UVM v0.1: код, мнемоника, обработчик,
-            признак imm64 (SPEC/L0-UVM.txt, раздел 5).
-- tests/test_uvm_table.py — методов: 10
-  карточки: registry/t0.uvm.table/test_uvm_table.txt
-  описание: Тесты таблицы опкодов: 38 записей SPEC v0.1, уникальность
-            кодов и мнемоник, золотое соответствие код-мнемоника-imm64,
-            проводка обработчиков, поиск неизвестных кодов и мнемоник.
-
-ВСЕГО МЕТОДОВ: 951
+ВСЕГО ВЕТВЕЙ: 27
+ВСЕГО МЕТОДОВ: 1026

@@ -1,0 +1,30 @@
+ИНДЕКС ВЕТВИ t0.ubrick.integration [слой L3]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.ubrick.integration/<файл>.txt.
+
+- src/arith.ubrk — методов: 0
+  карточки: registry/t0.ubrick.integration/arith.txt
+  описание: Программа «арифметика»: (2+3)*4 = 20 численными литералами и
+            примитивами ADD/MUL (SPEC/L3-UBRICK.txt, разделы 3 и 4.1);
+            результат остаётся на стеке данных — поведение эталона
+            src/arith.uasm Этапа 2: стек [20], без вывода, код 0.
+- src/hello.ubrk — методов: 0
+  карточки: registry/t0.ubrick.integration/hello.txt
+  описание: Программа «вывод символа»: строка данных text и производное
+            слово prints (SPEC/L3-UBRICK.txt, разделы 6 и 4.2); вывод
+            "Hi", код 0 — поведение эталона src/hello.uasm Этапа 2
+            (образ содержит весь словарь, сверяется поведение).
+- src/nested_calls.ubrk — методов: 0
+  карточки: registry/t0.ubrick.integration/nested_calls.txt
+  описание: Программа «вложенные вычисления»: var-ячейки x/y/i, вызовы
+            sub1/sub2 глубиной два, счётный цикл BEGIN/UNTIL с
+            производным словом dec (SPEC/L3-UBRICK.txt, разделы 4.2, 5 и
+            6); поведение эталона src/nested_calls.uasm Этапа 2: вывод
+            "!", стек [111, 222], пустой RS, код 0.
+- tests/test_ubrick_integration.py — методов: 10
+  карточки: registry/t0.ubrick.integration/test_ubrick_integration.txt
+  описание: Интеграционные программы Этапа 3: исходники src/*.ubrk
+            собираются командой ubrick_cli compile и исполняются
+            uvm_cli; поведение — как у эталонов Этапов 1-2
+            (SPEC/L3-UBRICK.txt, ROADMAP.txt Этап 3).

@@ -1,0 +1,13 @@
+ИНДЕКС ВЕТВИ t0.uvm.core [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uvm.core/<файл>.txt.
+
+- tools/uvm_core.py — методов: 19
+  карточки: registry/t0.uvm.core/uvm_core.txt
+  описание: Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS
+            (SPEC/L0-UVM.txt, Этап 1).
+- tests/test_uvm_core.py — методов: 30
+  карточки: registry/t0.uvm.core/test_uvm_core.txt
+  описание: Тесты ядра UVM: слова, ловушки, остановка, ОЗУ, стеки DS/RS
+            и загрузка образа.

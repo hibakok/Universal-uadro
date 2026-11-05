@@ -1,0 +1,15 @@
+ИНДЕКС ВЕТВИ t0.uasm.symbols [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uasm.symbols/<файл>.txt.
+
+- tools/uasm_symbols.py — методов: 3
+  карточки: registry/t0.uasm.symbols/uasm_symbols.txt
+  описание: Таблица символов uAsm: имя -> значение; единое пространство
+            имён для меток и констант; повторное определение имени —
+            ошибка (SPEC/L2-UASM.txt, разделы 3 и 7).
+- tests/test_uasm_symbols.py — методов: 5
+  карточки: registry/t0.uasm.symbols/test_uasm_symbols.txt
+  описание: Тесты таблицы символов uAsm: создание, выборка, определение,
+            повторное определение имени, единое пространство имён
+            (SPEC/L2-UASM.txt, раздел 3).

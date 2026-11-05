@@ -1,0 +1,15 @@
+ИНДЕКС ВЕТВИ t0.ubrick.dict [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.ubrick.dict/<файл>.txt.
+
+- tools/ubrick_dict.py — методов: 8
+  карточки: registry/t0.ubrick.dict/ubrick_dict.txt
+  описание: Словарь uBrick v0.4: примитивы и псевдонимы (имя -> одна
+            инструкция uAsm), производные слова с телами словами uBrick
+            и управляющие конструкции (SPEC/L3-UBRICK.txt, разделы 4-5).
+- tests/test_ubrick_dict.py — методов: 32
+  карточки: registry/t0.ubrick.dict/test_ubrick_dict.txt
+  описание: Тесты словаря uBrick v0.4: примитивы, псевдонимы,
+            производные слова, конструкции, поиск по имени и списки слов
+            (SPEC/L3-UBRICK.txt, разделы 4-5).

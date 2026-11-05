@@ -1,0 +1,14 @@
+ИНДЕКС ВЕТВИ t0.uvm.exec [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uvm.exec/<файл>.txt.
+
+- tools/uvm_exec.py — методов: 1
+  карточки: registry/t0.uvm.exec/uvm_exec.txt
+  описание: Шаг исполнения UVM v0.1: декодировать инструкцию по PC и
+            вызвать её обработчик (SPEC/L0-UVM.txt, Этап 1).
+- tests/test_uvm_exec.py — методов: 11
+  карточки: registry/t0.uvm.exec/test_uvm_exec.txt
+  описание: Тесты шага исполнения: декодирование по PC и вызов
+            обработчика всех групп опкодов, HALT, ловушки 6, 7, 8
+            (SPEC/L0-UVM.txt).

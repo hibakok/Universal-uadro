@@ -1,0 +1,16 @@
+ИНДЕКС ВЕТВИ t0.uasm.disasm [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uasm.disasm/<файл>.txt.
+
+- tools/uasm_disasm.py — методов: 6
+  карточки: registry/t0.uasm.disasm/uasm_disasm.txt
+  описание: Дизассемблер образа UVM: линейное чтение с адреса 0, по
+            одной инструкции на строку, хвост данных — директивами DB до
+            восьми аргументов на строку (SPEC/L2-UASM.txt, раздел 8).
+- tests/test_uasm_disasm.py — методов: 36
+  карточки: registry/t0.uasm.disasm/test_uasm_disasm.txt
+  описание: Тесты дизассемблера образа: чтение imm64, строка инструкции,
+            шаг декодирования, хвост данных директивами DB, пустой
+            образ, раунд-трип assemble(disasm(B)) == B
+            (SPEC/L2-UASM.txt, раздел 8).

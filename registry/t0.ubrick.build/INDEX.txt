@@ -1,0 +1,16 @@
+ИНДЕКС ВЕТВИ t0.ubrick.build [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.ubrick.build/<файл>.txt.
+
+- tools/ubrick_build.py — методов: 13
+  карточки: registry/t0.ubrick.build/ubrick_build.txt
+  описание: Сборка программы uBrick: пролог, производные слова словаря,
+            определения и данные исходника в текст uAsm и образ UVM
+            (SPEC/L3-UBRICK.txt, раздел 7).
+- tests/test_ubrick_build.py — методов: 36
+  карточки: registry/t0.ubrick.build/test_ubrick_build.txt
+  описание: Тесты сборки программы uBrick: кирпичи пролога, слов и
+            данных, части текста uAsm, порядок частей и счётчик меток
+            программы, поведение эталонных программ на UVM
+            (SPEC/L3-UBRICK.txt, раздел 7).

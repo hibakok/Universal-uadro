@@ -1,0 +1,18 @@
+ИНДЕКС ВЕТВИ t0.ubrick.cli [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.ubrick.cli/<файл>.txt.
+
+- tools/ubrick_cli.py — методов: 9
+  карточки: registry/t0.ubrick.cli/ubrick_cli.txt
+  описание: Командный режим uBrick: compile — чтение исходника, склейка
+            use-включений (загрузчик t0.ubrick.source, v0.3), разбор,
+            сборка образа UVM и запись результата; --asm сохраняет
+            промежуточный текст uAsm (SPEC/L3-UBRICK.txt, раздел 9).
+- tests/test_ubrick_cli.py — методов: 27
+  карточки: registry/t0.ubrick.cli/test_ubrick_cli.txt
+  описание: Тесты командного режима uBrick: разбор аргументов с флагом
+            --asm, чтение исходника и запись результата, режим compile,
+            ошибки с кодом 2 и сообщением в stderr, сквозной запуск
+            настоящим процессом (compile, затем uvm_cli)
+            (SPEC/L3-UBRICK.txt, раздел 9).

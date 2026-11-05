@@ -1,0 +1,22 @@
+ИНДЕКС ВЕТВИ t0.uasm.encode [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.uasm.encode/<файл>.txt.
+
+- tools/uasm_encode.py — методов: 9
+  карточки: registry/t0.uasm.encode/uasm_encode.txt
+  описание: Кодирование записей uAsm в байты: слово little-endian с
+            оборачиванием отрицательных, байт DB, разрешение операнда
+            (литерал или имя), инструкции и директивы данных, размер
+            записи для адресов прохода 1 (SPEC/L2-UASM.txt, разделы
+            4-7).
+- tests/test_uasm_encode.py — методов: 14
+  карточки: registry/t0.uasm.encode/test_uasm_encode.txt
+  описание: Тесты кирпичей кодирования значений: слово с оборачиванием
+            отрицательных, слово little-endian, байт DB, разрешение
+            операнда — литерал или имя (SPEC/L2-UASM.txt, разделы 4-6).
+- tests/test_uasm_encode_rec.py — методов: 23
+  карточки: registry/t0.uasm.encode/test_uasm_encode_rec.txt
+  описание: Тесты кодирования записей uAsm: инструкции (опкод и поле
+            imm64), директивы DB/DW, размер записи для прохода 1 и
+            запись целиком (SPEC/L2-UASM.txt, разделы 5-7).

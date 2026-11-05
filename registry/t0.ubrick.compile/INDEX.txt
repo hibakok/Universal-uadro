@@ -1,0 +1,16 @@
+ИНДЕКС ВЕТВИ t0.ubrick.compile [слой T0]
+
+Индекс генерируется tools/registry_scan.py; вручную не редактировать.
+Карточки методов исходного файла — registry/t0.ubrick.compile/<файл>.txt.
+
+- tools/ubrick_compile.py — методов: 6
+  карточки: registry/t0.ubrick.compile/ubrick_compile.txt
+  описание: Компиляция тела определения uBrick в строки uAsm: слова —
+            инструкции и CALL, литералы — PUSH imm, конструкции —
+            переходы со служебными метками _L<n> (SPEC/L3-UBRICK.txt,
+            разделы 2, 5 и 7).
+- tests/test_ubrick_compile.py — методов: 20
+  карточки: registry/t0.ubrick.compile/test_ubrick_compile.txt
+  описание: Тесты компиляции тел uBrick: кирпичи меток, слов и
+            литералов; каждая конструкция, вложенность, полные тела и
+            общий счётчик (SPEC/L3-UBRICK.txt, разделы 2, 5 и 7).
