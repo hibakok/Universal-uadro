@@ -161,14 +161,26 @@ DW 0 либо DZ "литерал"), definition_lines, части derived_part
 text/prints, арифметика, var, вложенные вызовы, BEGIN/UNTIL,
 производные слова abs/min/max/lts/sext8) и ошибка сборки без main.
 
-Следующий малый шаг: Этап 3 (uBrick) — ветвь t0.ubrick.cli: режим
-compile по SPEC/L3-UBRICK.txt (раздел 9): python tools/ubrick_cli.py
-compile ИСТОЧНИК.ubrk ОБРАЗ.uvm [--asm ТЕКСТ.uasm] — чтение исходника,
-parse_ubrk, build_ubrk, запись образа в файл; --asm дополнительно
-сохраняет промежуточный текст uAsm (build_text); ошибки — код
-выхода 2 и сообщение в stderr; тесты: успех, --asm, ошибки разбора
-и сборки, сквозной запуск настоящим процессом (compile, затем
-uvm_cli).
+Этап 3 продолжается: закрыта ветвь t0.ubrick.cli — режим compile
+(tools/ubrick_cli.py): python tools/ubrick_cli.py compile
+ИСТОЧНИК.ubrk ОБРАЗ.uvm [--asm ТЕКСТ.uasm] — чтение исходника, разбор
+parse_ubrk, сборка build_ubrk, запись образа в файл; --asm
+дополнительно сохраняет промежуточный текст uAsm (build_text); ошибки
+— код выхода 2 и сообщение в stderr. Тесты (tests/test_ubrick_cli.py,
+21 тест): кирпичи аргументов (флаг --asm на четвёртом месте) и файлов,
+успех и --asm — золотые образ и текст ветвей t0.ubrick.parse и
+t0.ubrick.build байт в байт, ошибки разбора, сборки (заглушка
+build_ubrk) и файлов, сквозной запуск настоящими процессами
+(compile, затем uvm_cli: вывод «Hi», код 0).
+
+Следующий малый шаг: Этап 3 (uBrick) — ветвь t0.ubrick.integration:
+интеграционные программы исходниками .ubrk в src/ — «вывод символа»
+(hello.ubrk: text/prints), «арифметика» (arith.ubrk: (2+3)*4),
+«вложенные вычисления» (nested_calls.ubrk: var, производные слова,
+BEGIN/UNTIL); каждая собирается настоящей командой ubrick_cli compile
+и исполняется uvm_cli (сквозные процессы); закрывает Этап 3 по DoD:
+«hello» и вложенные вычисления пишутся словами, минимальный словарь
+есть, тесты словаря есть.
 
 Контракт обработчиков (действует, реализован в t0.uvm.decode/exec):
 к моменту вызова обработчика PC уже указывает на байт, следующий
@@ -375,3 +387,15 @@ uvm_cli).
   вложенные вызовы, цикл BEGIN/UNTIL, производные слова
   abs/min/max/lts/sext8) и ошибка сборки без main. Следующий шаг —
   ветвь t0.ubrick.cli (режим compile).
+- 2026-11-05 — Этап 3: закрыта ветвь t0.ubrick.cli — режим compile
+  (tools/ubrick_cli.py + tests/test_ubrick_cli.py): кирпичи
+  parse_compile_args/parse_args (исходник, образ, флаг --asm с путём
+  текста), read_text, write_bytes/write_text, write_asm_text
+  (промежуточный текст uAsm флага --asm), run_compile, main; разбор —
+  ветвь t0.ubrick.parse, сборка — t0.ubrick.build; ошибки — код 2
+  и сообщение в stderr; 21 тест: аргументы, кирпичи файлов, успех
+  и --asm (золотые образ и текст ветвей build), ошибки
+  разбора/сборки/файлов, сквозной запуск настоящим процессом
+  (compile, затем uvm_cli — вывод «Hi», код 0). Следующий шаг — ветвь
+  t0.ubrick.integration (интеграционные программы .ubrk в src/,
+  закрытие Этапа 3).
