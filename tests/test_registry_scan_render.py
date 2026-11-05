@@ -2,15 +2,19 @@
 # @file    tests/test_registry_scan_render.py
 # @layer   T0
 # @branch  t0.infra.registry
-# @desc    Тесты генератора реестра: рендер простым текстом, сверка
-# @desc    и очистка на диске (разбор и план — tests/test_registry_scan.py).
+# @desc    Тесты рендера реестра (tools/registry_render.py): перенос
+# @desc    по словам, карточки, индекс ветви и компактный индекс верхнего
+# @desc    уровня, группировка плана; скан реального репозитория, запись
+# @desc    и сверка на диске — tools/registry_scan.py (разбор и план —
+# @desc    tests/test_registry_scan.py).
 
-"""Тесты рендера и диска реестра (tools/registry_scan.py).
+"""Тесты рендера и диска реестра (tools/registry_render.py, registry_scan.py).
 
-Перенос по словам, склейка полей, рендер карточек и индекса, скан
-реального репозитория (включая исходники .uasm/.ubrk, Этап 4), запись
-и сверка реестра на диске. Разбор аннотаций и план —
-tests/test_registry_scan.py.
+Перенос по словам, склейка полей, рендер карточек, индекса ветви
+и компактного индекса верхнего уровня (METHODS.txt не растёт с числом
+файлов — лимит строк CHARTER.txt, п. 3), скан реального репозитория
+(включая исходники .uasm/.ubrk, Этап 4), запись и сверка реестра
+на диске. Разбор аннотаций и план — tests/test_registry_scan.py.
 
 Запуск из корня репозитория:
     python -m unittest discover -s tests -t . -v
@@ -20,6 +24,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools import registry_render as rr
 from tools import registry_scan as rs
 
 
@@ -71,15 +76,15 @@ class TestWrapWords(unittest.TestCase):
     # @out   нет
     # @does  Текст короче ширины не переносится.
     def test_short_text_stays_single_line(self):
-        self.assertEqual(rs.wrap_words("короткий текст", 40), ["короткий текст"])
+        self.assertEqual(rr.wrap_words("короткий текст", 40), ["короткий текст"])
 
     # @method test_words_wrap_at_width() -> None
     # @in    нет
     # @out   нет
     # @does  Слова переносятся так, что строки не шире границы.
     def test_words_wrap_at_width(self):
-        self.assertEqual(rs.wrap_words("ааа ббб ввв", 7), ["ааа ббб", "ввв"])
-        self.assertEqual(rs.wrap_words("ааа ббб ввв", 11), ["ааа ббб ввв"])
+        self.assertEqual(rr.wrap_words("ааа ббб ввв", 7), ["ааа ббб", "ввв"])
+        self.assertEqual(rr.wrap_words("ааа ббб ввв", 11), ["ааа ббб ввв"])
 
     # @method test_long_word_owns_line() -> None
     # @in    нет
@@ -87,7 +92,7 @@ class TestWrapWords(unittest.TestCase):
     # @does  Слово длиннее ширины занимает строку целиком.
     def test_long_word_owns_line(self):
         self.assertEqual(
-            rs.wrap_words("а длинноещёдлиннее б", 5),
+            rr.wrap_words("а длинноещёдлиннее б", 5),
             ["а", "длинноещёдлиннее", "б"],
         )
 
@@ -96,7 +101,7 @@ class TestWrapWords(unittest.TestCase):
     # @out   нет
     # @does  Пустой текст даёт пустой список строк.
     def test_empty_text_gives_no_lines(self):
-        self.assertEqual(rs.wrap_words("", 40), [])
+        self.assertEqual(rr.wrap_words("", 40), [])
 
 
 class TestMergeItems(unittest.TestCase):
@@ -107,7 +112,7 @@ class TestMergeItems(unittest.TestCase):
     # @out   нет
     # @does  Продолжения @does склеиваются через пробел.
     def test_does_joins_into_one_text(self):
-        merged = rs.merge_items("does", ["Первая часть", "вторая часть."])
+        merged = rr.merge_items("does", ["Первая часть", "вторая часть."])
         self.assertEqual(merged, ["Первая часть вторая часть."])
 
     # @method test_lists_join_with_comma() -> None
@@ -115,8 +120,8 @@ class TestMergeItems(unittest.TestCase):
     # @out   нет
     # @does  Списки @uses и @depends склеиваются через запятую.
     def test_lists_join_with_comma(self):
-        self.assertEqual(rs.merge_items("depends", ["a", "b"]), ["a, b"])
-        self.assertEqual(rs.merge_items("uses", ["x"]), ["x"])
+        self.assertEqual(rr.merge_items("depends", ["a", "b"]), ["a, b"])
+        self.assertEqual(rr.merge_items("uses", ["x"]), ["x"])
 
     # @method test_in_stays_separate() -> None
     # @in    нет
@@ -124,7 +129,7 @@ class TestMergeItems(unittest.TestCase):
     # @does  Строки @in и @out остаются отдельными.
     def test_in_stays_separate(self):
         self.assertEqual(
-            rs.merge_items("in", ["a: int", "b: int"]), ["a: int", "b: int"]
+            rr.merge_items("in", ["a: int", "b: int"]), ["a: int", "b: int"]
         )
 
     # @method test_empty_items_give_empty_list() -> None
@@ -132,7 +137,7 @@ class TestMergeItems(unittest.TestCase):
     # @out   нет
     # @does  Отсутствующее поле даёт пустой список абзацев.
     def test_empty_items_give_empty_list(self):
-        self.assertEqual(rs.merge_items("does", []), [])
+        self.assertEqual(rr.merge_items("does", []), [])
 
 
 class TestRenderField(unittest.TestCase):
@@ -144,9 +149,9 @@ class TestRenderField(unittest.TestCase):
     # @does  Значение начинается после метки; продолжения выровнены
     # @does  под началом значения и не содержат метки.
     def test_label_and_continuation_align(self):
-        lines = rs.render_field("функция", ["слово " * 30])
+        lines = rr.render_field("функция", ["слово " * 30])
         self.assertTrue(lines[0].startswith("  функция:"))
-        pad = " " * (len("  ") + rs.LABEL_WIDTH)
+        pad = " " * (len("  ") + rr.LABEL_WIDTH)
         for line in lines[1:]:
             self.assertTrue(line.startswith(pad))
 
@@ -155,7 +160,7 @@ class TestRenderField(unittest.TestCase):
     # @out   нет
     # @does  Каждый абзац значения начинается с метки поля.
     def test_separate_items_give_separate_paragraphs(self):
-        lines = rs.render_field("вход", ["a: int — первое", "b: int — второе"])
+        lines = rr.render_field("вход", ["a: int — первое", "b: int — второе"])
         self.assertEqual(len(lines), 2)
         self.assertTrue(lines[0].startswith("  вход:"))
         self.assertTrue(lines[1].startswith("  вход:"))
@@ -168,9 +173,10 @@ class TestRender(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Файл карточек содержит шапку с путём исходника и карточки.
+    # @depends rs.plan_registry
     def test_card_file_contains_cards(self):
         plan = rs.plan_registry([sample_entry()])
-        text = rs.render_card_file(plan[0])
+        text = rr.render_card_file(plan[0])
         self.assertIn("КАРТОЧКИ ФАЙЛА tools/sample.py", text)
         self.assertIn("Ветвь: t0.sample.demo", text)
         self.assertIn("МЕТОД one(a) -> int", text)
@@ -180,30 +186,78 @@ class TestRender(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Файл без методов получает пометку «Методов нет».
+    # @depends rs.plan_registry
     def test_card_file_without_methods_note(self):
         plan = rs.plan_registry([empty_entry("empty.py")])
-        text = rs.render_card_file(plan[0])
+        text = rr.render_card_file(plan[0])
         self.assertIn("Методов нет.", text)
 
-    # @method test_index_lists_branch_and_cards() -> None
+    # @method test_group_plan_by_branch() -> None
     # @in    нет
     # @out   нет
-    # @does  Индекс перечисляет ветвь, путь карточек и итог.
-    def test_index_lists_branch_and_cards(self):
+    # @does  Элементы плана разных ветвей образуют разные группы.
+    # @depends rs.plan_registry
+    def test_group_plan_by_branch(self):
+        plan = rs.plan_registry([sample_entry(), empty_entry("x.py")])
+        groups = rr.group_plan_by_branch(plan)
+        self.assertEqual(set(groups), {"t0.sample.demo", rs.NO_BRANCH})
+
+    # @method test_sort_plan_branches_by_layer() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Ветви сортируются по слою, затем по имени.
+    # @depends rs.plan_registry
+    def test_sort_plan_branches_by_layer(self):
+        plan = rs.plan_registry([sample_entry(), empty_entry("x.py")])
+        groups = rr.group_plan_by_branch(plan)
+        self.assertEqual(
+            rr.sort_plan_branches(groups), [rs.NO_BRANCH, "t0.sample.demo"]
+        )
+
+    # @method test_branch_index_lists_files() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Индекс ветви перечисляет исходники: путь, путь карточек
+    # @does  и описание из шапки (registry/<ветвь>/INDEX.txt).
+    # @depends rs.plan_registry
+    def test_branch_index_lists_files(self):
         plan = rs.plan_registry([sample_entry()])
-        text = rs.render_index(plan)
-        self.assertIn("ВЕТВЬ t0.sample.demo [слой T0] — методов: 2", text)
+        groups = rr.group_plan_by_branch(plan)
+        text = rr.render_branch_index("t0.sample.demo", groups["t0.sample.demo"])
+        self.assertIn("ИНДЕКС ВЕТВИ t0.sample.demo", text)
+        self.assertIn("- tools/sample.py — методов: 2", text)
         self.assertIn("registry/t0.sample.demo/sample.txt", text)
+        self.assertIn("Образец для тестов.", text)
+
+    # @method test_index_lists_branches_only() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Индекс верхнего уровня перечисляет только ветви: имя, слой,
+    # @does  число файлов и методов, путь индекса ветви; строки файлов
+    # @does  («- путь») остаются в индексе ветви — METHODS.txt не растёт
+    # @does  с числом файлов репозитория (лимит CHARTER.txt, п. 3).
+    # @depends rs.plan_registry
+    def test_index_lists_branches_only(self):
+        plan = rs.plan_registry([sample_entry()])
+        text = rr.render_index(rr.group_plan_by_branch(plan))
+        self.assertIn("ВЕТВЬ t0.sample.demo [слой T0] — файлов: 1,"
+                      " методов: 2", text)
+        self.assertIn("registry/t0.sample.demo/INDEX.txt", text)
         self.assertIn("ВСЕГО МЕТОДОВ: 2", text)
+        self.assertNotIn("\n- ", text)
 
     # @method test_render_all_names() -> None
     # @in    нет
     # @out   нет
-    # @does  Реестр состоит из индекса и карточек по исходным файлам.
+    # @does  Реестр состоит из индекса, индексов ветвей и карточек
+    # @does  по исходным файлам.
+    # @depends rs.plan_registry
     def test_render_all_names(self):
-        files = rs.render_all([sample_entry()])
+        files = rr.render_all(rs.plan_registry([sample_entry()]))
         self.assertEqual(
-            set(files), {"METHODS.txt", "t0.sample.demo/sample.txt"}
+            set(files),
+            {"METHODS.txt", "t0.sample.demo/INDEX.txt",
+             "t0.sample.demo/sample.txt"},
         )
 
 
@@ -235,13 +289,25 @@ class TestRepositoryScan(unittest.TestCase):
     # @method test_all_cards_in_branch_dirs() -> None
     # @in    нет
     # @out   нет
-    # @does  Кроме индекса все файлы реестра лежат в подкаталогах ветвей.
+    # @does  Кроме индекса верхнего уровня все файлы реестра лежат
+    # @does  в подкаталогах ветвей (индексы ветвей и карточки).
     def test_all_cards_in_branch_dirs(self):
         files = rs.scan_repository()
-        nested = [name for name in files if name != rs.INDEX_NAME]
+        nested = [name for name in files if name != rr.INDEX_NAME]
         self.assertTrue(nested)
         for name in nested:
             self.assertIn("/", name)
+
+    # @method test_index_files_in_every_branch() -> None
+    # @in    нет
+    # @out   нет
+    # @does  У каждой ветви есть индекс registry/<ветвь>/INDEX.txt
+    # @does  (двухуровневый реестр; METHODS.txt остаётся компактным).
+    def test_index_files_in_every_branch(self):
+        files = rs.scan_repository()
+        indexes = [name for name in files if name.endswith("/INDEX.txt")]
+        self.assertGreater(len(indexes), 10)
+        self.assertLess(len(files[rr.INDEX_NAME].splitlines()), 100)
 
     # @method test_card_file_mentions_source() -> None
     # @in    нет
