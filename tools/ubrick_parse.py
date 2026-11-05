@@ -47,7 +47,7 @@ from tools.ubrick_dict import (
 SPACES = " \t"                        # разделители слов (SPEC, раздел 3)
 LOWER = "abcdefghijklmnopqrstuvwxyz"  # первый символ имени
 NAME_REST = LOWER + "0123456789"      # прочие символы имени
-RESERVED = ("var", "text")            # ключевые слова операторов (v0.2)
+RESERVED = ("var", "text", "use")  # ключевые слова операторов (v0.2-v0.3)
 DERIVED_SET = frozenset(derived_names())
 
 
