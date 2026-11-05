@@ -7,7 +7,8 @@
 ; @desc    Деление буфера источника на строки со счётчиком (linestep),
 ; @desc    чистка строки (концевые CR, комментарий «;» вне кавычек,
 ; @desc    крайние пробелы), первое слово и остаток (splitword), слова
-; @desc    аргументов в пары буфера аргументов (splitargs).
+; @desc    аргументов в пары буфера аргументов (splitargs), поиск байта
+; @desc    вне кавычек (findch — «;» и «=», подшаг 4).
 
 ; Клетки прохода по строкам: bp — начало следующей строки буфера,
 ; be — конец буфера (за последним байтом входа), ln — номер текущей
@@ -29,6 +30,11 @@ var qe
 ; Клетка кавычки сканера комментариев (cstep): 0 — вне литералов,
 ; 34 — внутри «"», 39 — внутри «'».
 var cq
+
+; Клетка искомого байта сканера (cstep/findch): findsemi ищет «;» (59),
+; разбор константы asmline.ubrk — «=» (61); значение ставится
+; вызывающим до запуска сканера (подшаг 4).
+var cb
 
 ; Клетки слова строки (splitword): wa/wl — адрес и длина первого слова,
 ; ra/rl — адрес и длина остатка после слова (пробелы после слова сняты).
@@ -54,15 +60,15 @@ var ae
   9 EQ ;
 
 ; @method cstep ( -- done )
-; @in    нет (клетки cp, qe, cq — состояние скана)
+; @in    нет (клетки cp, qe, cq, cb — состояние скана)
 ; @out   done: слово — 0: позиция cp движется; 1: стоп — cp за пределом
-; @out   либо на «;» (59) вне кавычек
-; @does  Один шаг поиска «;» вне литералов (SPEC/L2-UASM.txt, раздел 2,
+; @out   либо на искомом байте cb вне кавычек
+; @does  Один шаг поиска байта cb вне литералов (SPEC/L2-UASM.txt, раздел 2,
 ; @does  как find_outside_quotes эталона): вне кавычки «"» (34) и «'»
 ; @does  (39) открывают литерал; внутри литерала «\» (92) пропускает
-; @does  два байта, парная кавычка закрывает; «;» вне кавычек — стоп;
+; @does  два байта, парная кавычка закрывает; байт cb вне кавычек — стоп;
 ; @does  незакрытая кавычка тянется до предела диапазона.
-; @depends cp, qe, cq, LTU, not, EQ
+; @depends cp, qe, cq, cb, LTU, not, EQ
 : cstep
   cp LOAD64 qe LOAD64 LTU not IF 1 EXIT THEN
   cq LOAD64
@@ -77,9 +83,28 @@ var ae
     IF DROP 34 cq STORE64 cp LOAD64 1 ADD cp STORE64 0 EXIT THEN
     DUP 39 EQ
     IF DROP 39 cq STORE64 cp LOAD64 1 ADD cp STORE64 0 EXIT THEN
-    59 EQ IF 1 EXIT THEN
+    cb LOAD64 EQ IF 1 EXIT THEN
     cp LOAD64 1 ADD cp STORE64 0
   THEN ;
+
+; @method findch ( s e b -- s cut )
+; @in    s: слово — адрес первого байта диапазона
+; @in    e: слово — адрес за последним байтом диапазона
+; @in    b: слово — искомый байт 0..255
+; @out   s: слово — прежний адрес начала (передаётся дальше по цепочке)
+; @out   cut: слово — адрес первого b вне кавычек либо e (байта нет)
+; @does  Ищет первый байт b вне литералов в кавычках в [s, e) (SPEC/
+; @does  L2-UASM.txt, раздел 2, как find_outside_quotes эталона): cstep
+; @does  сканирует диапазон со значением cb = b; перелёт escape за e
+; @does  выравнивается на e; кирпичи findsemi и разбора константы
+; @does  (asmline.ubrk, подшаг 4).
+; @depends cb, cp, qe, cq, cstep, LTU, not
+: findch
+  cb STORE64
+  qe STORE64 DUP cp STORE64 0 cq STORE64
+  BEGIN cstep UNTIL
+  cp LOAD64 qe LOAD64 LTU not IF qe LOAD64 cp STORE64 THEN
+  cp LOAD64 ;
 
 ; @method findsemi ( s e -- s cut )
 ; @in    s: слово — адрес первого байта диапазона
@@ -87,14 +112,11 @@ var ae
 ; @out   s: слово — прежний адрес начала (передаётся дальше по цепочке)
 ; @out   cut: слово — адрес «;» вне кавычек либо e (комментария нет)
 ; @does  Ищет начало комментария в [s, e) (SPEC/L2-UASM.txt, раздел 2):
-; @does  cstep сканирует диапазон; перелёт escape за e выравнивается
-; @does  на e; кирпич doline главного файла.
-; @depends cp, qe, cq, cstep, LTU, not
+; @does  findch с искомым байтом «;» (59); перелёт escape за e
+; @does  выравнивается на e; кирпич doline главного файла.
+; @depends findch
 : findsemi
-  qe STORE64 DUP cp STORE64 0 cq STORE64
-  BEGIN cstep UNTIL
-  cp LOAD64 qe LOAD64 LTU not IF qe LOAD64 cp STORE64 THEN
-  cp LOAD64 ;
+  59 findch ;
 
 ; @method crstep ( s e -- s e done )
 ; @in    s: слово — адрес первого байта строки
