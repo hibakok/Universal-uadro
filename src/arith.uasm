@@ -1,10 +1,12 @@
-; @uadro — исходник слоя L2 (uAsm)
-; Программа «арифметика» (ветвь t0.uasm.integration, Этап 2).
-; Считает (2+3)*4 = 20 и оставляет результат на стеке данных.
-; Константы a, b, k назначаются первым проходом ассемблера
-; (SPEC/L2-UASM.txt, раздел 3); образ байт в байт совпадает
-; с эталоном Этапа 1 — tests/test_uvm_integration.py,
-; prog_arithmetic.
+; @uadro
+; @file    src/arith.uasm
+; @layer   L2
+; @branch  t0.uasm.integration
+; @desc    Программа «арифметика»: (2+3)*4 = 20 на стеке данных;
+; @desc    константы a, b, k назначает проход 1 ассемблера
+; @desc    (SPEC/L2-UASM.txt, раздел 3); образ байт в байт совпадает
+; @desc    с эталоном Этапа 1 — tests/test_uvm_integration.py,
+; @desc    prog_arithmetic.
 
 a = 2
 b = 3
