@@ -1,0 +1,12 @@
+; @uadro — исходник слоя L2 (uAsm)
+; Программа «вывод символа» (ветвь t0.uasm.integration, Этап 2).
+; Выводит "Hi" в stdout двумя системными вызовами SYS 1
+; (SPEC/L0-UVM.txt, раздел 6) и завершается HALT 0.
+; Образ байт в байт совпадает с эталоном Этапа 1 —
+; tests/test_uvm_integration.py, prog_char_output.
+
+PUSH 'H'
+SYS 1
+PUSH 'i'
+SYS 1
+HALT 0
