@@ -1,0 +1,107 @@
+; @uadro
+; @file    src/l2/disasm.ubrk
+; @layer   L2
+; @branch  l2.uasm.disasm
+; @desc    Дизассемблер uAsm — собственное воплощение Этапа 4: вход —
+; @desc    образ UVM в stdin (KEY), выход — текст uAsm в stdout (EMIT),
+; @desc    код завершения 0 (SPEC/L4-SELFHOST.txt, разделы 4-5).
+; @desc    Подшаг 1 (каркас и таблица мнемоник): каждый известный опкод —
+; @desc    строка «МНЕМОНИКА»; неизвестный код и EOF — останов. Печать
+; @desc    значений imm64 — подшаг 2, хвост DB — подшаг 3, золотая сверка
+; @desc    с эталоном — подшаг 4.
+
+; Таблицы мнемоник (SPEC/L4-SELFHOST.txt, раздел 5): шесть строк по
+; диапазонам кодов; запись — восемь байтов: мнемоника, дополненная
+; нулями; печать записи — словом prints (до нулевого байта).
+
+; @method tstm ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x00-0x07 (стек)
+; @does  Данные: восемь записей по восемь байтов (NOP PUSH DROP DUP SWAP
+; @does  OVER ROT PICK); запись кода c — по адресу tstm + c * 8.
+text tstm "NOP\0\0\0\0\0PUSH\0\0\0\0DROP\0\0\0\0DUP\0\0\0\0\0SWAP\0\0\0\0OVER\0\0\0\0ROT\0\0\0\0\0PICK\0\0\0\0"
+
+; @method tmem ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x10-0x13 (память)
+; @does  Данные: четыре записи по восемь байтов (LOAD8 LOAD64 STORE8
+; @does  STORE64); запись кода c — по адресу tmem + (c - 0x10) * 8.
+text tmem "LOAD8\0\0\0LOAD64\0\0STORE8\0\0STORE64\0"
+
+; @method tari ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x20-0x2C (арифметика)
+; @does  Данные: тринадцать записей по восемь байтов (ADD SUB MUL UDIV
+; @does  UMOD NEG SHL SHR SAR AND OR XOR INV); запись кода c — по адресу
+; @does  tari + (c - 0x20) * 8.
+text tari "ADD\0\0\0\0\0SUB\0\0\0\0\0MUL\0\0\0\0\0UDIV\0\0\0\0UMOD\0\0\0\0NEG\0\0\0\0\0SHL\0\0\0\0\0SHR\0\0\0\0\0SAR\0\0\0\0\0AND\0\0\0\0\0OR\0\0\0\0\0\0XOR\0\0\0\0\0INV\0\0\0\0\0"
+
+; @method tcmp ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x30-0x35 (сравнения)
+; @does  Данные: шесть записей по восемь байтов (EQ NEQ LTU GTU LEU GEU);
+; @does  запись кода c — по адресу tcmp + (c - 0x30) * 8.
+text tcmp "EQ\0\0\0\0\0\0NEQ\0\0\0\0\0LTU\0\0\0\0\0GTU\0\0\0\0\0LEU\0\0\0\0\0GEU\0\0\0\0\0"
+
+; @method tjmp ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x40-0x45 (переходы)
+; @does  Данные: шесть записей по восемь байтов (JMP JZ JNZ CALL RET
+; @does  HALT); запись кода c — по адресу tjmp + (c - 0x40) * 8.
+text tjmp "JMP\0\0\0\0\0JZ\0\0\0\0\0\0JNZ\0\0\0\0\0CALL\0\0\0\0RET\0\0\0\0\0HALT\0\0\0\0"
+
+; @method tsys ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x50 (система)
+; @does  Данные: одна запись — восемь байтов (SYS); запись кода 0x50 —
+; @does  по адресу tsys.
+text tsys "SYS\0\0\0\0\0"
+
+; @method scale8 ( idx base -- addr )
+; @in    idx: слово — номер записи в строке таблицы (код - низ диапазона)
+; @in    base: слово — адрес первой записи строки таблицы мнемоник
+; @out   addr: слово — адрес записи idx: base + idx * 8
+; @does  Адрес записи таблицы мнемоник (SPEC/L4-SELFHOST.txt, раздел 5);
+; @does  кирпич слова rowbase.
+; @depends SWAP, MUL, ADD
+: scale8
+  SWAP 8 MUL ADD ;
+
+; @method rowbase ( code -- addr 1 | 0 )
+; @in    code: слово — опкод 0..255
+; @out   addr: слово — адрес записи мнемоники (при флаге 1) либо 0
+; @out   flag: слово — 1: код в таблице; 0: код в дыре или за таблицей
+; @does  Ищет опкод в шести строках таблицы: диапазоны 0x00-0x07 (tstm),
+; @does  0x10-0x13 (tmem), 0x20-0x2C (tari), 0x30-0x35 (tcmp), 0x40-0x45
+; @does  (tjmp), 0x50 (tsys); адрес записи = база строки + (код - низ) * 8
+; @does  (SPEC/L4-SELFHOST.txt, раздел 5).
+; @depends LEU, LTU, GTU, scale8, tstm, tmem, tari, tcmp, tjmp, tsys
+: rowbase
+  DUP 0x07 LEU IF tstm scale8 1 EXIT THEN
+  DUP 0x10 LTU IF DROP 0 EXIT THEN
+  DUP 0x13 LEU IF 0x10 SUB tmem scale8 1 EXIT THEN
+  DUP 0x20 LTU IF DROP 0 EXIT THEN
+  DUP 0x2C LEU IF 0x20 SUB tari scale8 1 EXIT THEN
+  DUP 0x30 LTU IF DROP 0 EXIT THEN
+  DUP 0x35 LEU IF 0x30 SUB tcmp scale8 1 EXIT THEN
+  DUP 0x40 LTU IF DROP 0 EXIT THEN
+  DUP 0x45 LEU IF 0x40 SUB tjmp scale8 1 EXIT THEN
+  DUP 0x50 LTU IF DROP 0 EXIT THEN
+  DUP 0x50 GTU IF DROP 0 EXIT THEN
+  DROP tsys 1 ;
+
+; @method main ( -- )
+; @in    нет (вход инструмента — байты stdin, KEY)
+; @out   нет (выход инструмента — байты stdout, EMIT; код завершения 0)
+; @does  Каркас дизассемблера: читает байт (KEY); EOF — завершение
+; @does  (BYE); известный опкод — строка «МНЕМОНИКА» (prints до нуля
+; @does  и cr); неизвестный код — останов декодирования (хвост DB —
+; @does  подшаг 3 ветви, SPEC/L4-SELFHOST.txt, раздел 5). Флаг IF снимается
+; @does  с DS, поэтому ветвь ELSE не чистит стек.
+; @depends KEY, BYE, rowbase, prints, cr
+: main
+  BEGIN
+  KEY DUP -1 EQ IF DROP BYE THEN
+  rowbase IF prints ELSE BYE THEN
+  cr
+  AGAIN ;
