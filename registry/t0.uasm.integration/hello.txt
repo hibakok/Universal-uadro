@@ -1,0 +1,12 @@
+КАРТОЧКИ ФАЙЛА src/hello.uasm
+
+Ветвь: t0.uasm.integration
+Слой: L2
+Методов: 0
+Генерируется tools/registry_scan.py; вручную не редактировать.
+Описание: Программа «вывод символа»: два SYS 1 выводят "Hi" в stdout,
+          HALT 0 завершает (SPEC/L0-UVM.txt, раздел 6); образ байт в
+          байт совпадает с эталоном Этапа 1 —
+          tests/test_uvm_integration.py, prog_char_output.
+
+Методов нет.

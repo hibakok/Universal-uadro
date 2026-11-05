@@ -3,28 +3,66 @@
 Индекс генерируется tools/registry_scan.py; вручную не редактировать.
 Карточки методов исходного файла — registry/<ветвь>/<файл>.txt.
 
-ВЕТВЬ no-branch [слой ?] — методов: 0
+ВЕТВЬ t0.uasm.integration [слой L2] — методов: 12
 
 - src/arith.uasm — методов: 0
-  карточки: registry/no-branch/arith.txt
-  описание: без описания
+  карточки: registry/t0.uasm.integration/arith.txt
+  описание: Программа «арифметика»: (2+3)*4 = 20 на стеке данных;
+            константы a, b, k назначает проход 1 ассемблера
+            (SPEC/L2-UASM.txt, раздел 3); образ байт в байт совпадает с
+            эталоном Этапа 1 — tests/test_uvm_integration.py,
+            prog_arithmetic.
 - src/hello.uasm — методов: 0
-  карточки: registry/no-branch/hello.txt
-  описание: без описания
+  карточки: registry/t0.uasm.integration/hello.txt
+  описание: Программа «вывод символа»: два SYS 1 выводят "Hi" в stdout,
+            HALT 0 завершает (SPEC/L0-UVM.txt, раздел 6); образ байт в
+            байт совпадает с эталоном Этапа 1 —
+            tests/test_uvm_integration.py, prog_char_output.
 - src/nested_calls.uasm — методов: 0
-  карточки: registry/no-branch/nested_calls.txt
-  описание: без описания
-- src/arith.ubrk — методов: 0
-  карточки: registry/no-branch/arith_2.txt
-  описание: без описания
-- src/hello.ubrk — методов: 0
-  карточки: registry/no-branch/hello_2.txt
-  описание: без описания
-- src/nested_calls.ubrk — методов: 0
-  карточки: registry/no-branch/nested_calls_2.txt
-  описание: без описания
+  карточки: registry/t0.uasm.integration/nested_calls.txt
+  описание: Программа «вложенные CALL/RET»: main вызывает sub1, та —
+            sub2; подпрограммы оставляют на стеке 111 и 222, оба RET
+            возвращают управление по цепочке; вывод "!", HALT 0. Адреса
+            переходов — метки прохода 1 (SPEC/L2-UASM.txt, раздел 3),
+            NOP-выравнивание эталона Этапа 1 не нужно; поведение —
+            tests/test_uvm_integration.py, prog_nested_calls.
+- tests/test_uasm_integration.py — методов: 12
+  карточки: registry/t0.uasm.integration/test_uasm_integration.txt
+  описание: Интеграционные программы Этапа 2: исходники src/*.uasm
+            собираются командой uasm_cli asm и исполняются uvm_cli;
+            «вывод символа» и «арифметика» — байт в байт с эталонами
+            Этапа 1, «вложенные CALL/RET» — метками, с тем же поведением
+            (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2).
 
-ВЕТВЬ t0.infra.registry [слой T0] — методов: 48
+ВЕТВЬ t0.ubrick.integration [слой L3] — методов: 10
+
+- src/arith.ubrk — методов: 0
+  карточки: registry/t0.ubrick.integration/arith.txt
+  описание: Программа «арифметика»: (2+3)*4 = 20 численными литералами и
+            примитивами ADD/MUL (SPEC/L3-UBRICK.txt, разделы 3 и 4.1);
+            результат остаётся на стеке данных — поведение эталона
+            src/arith.uasm Этапа 2: стек [20], без вывода, код 0.
+- src/hello.ubrk — методов: 0
+  карточки: registry/t0.ubrick.integration/hello.txt
+  описание: Программа «вывод символа»: строка данных text и производное
+            слово prints (SPEC/L3-UBRICK.txt, разделы 6 и 4.2); вывод
+            "Hi", код 0 — поведение эталона src/hello.uasm Этапа 2
+            (образ содержит весь словарь, сверяется поведение).
+- src/nested_calls.ubrk — методов: 0
+  карточки: registry/t0.ubrick.integration/nested_calls.txt
+  описание: Программа «вложенные вычисления»: var-ячейки x/y/i, вызовы
+            sub1/sub2 глубиной два, счётный цикл BEGIN/UNTIL с
+            производным словом dec (SPEC/L3-UBRICK.txt, разделы 4.2, 5 и
+            6); поведение эталона src/nested_calls.uasm Этапа 2: вывод
+            "!", стек [111, 222], пустой RS, код 0.
+- tests/test_ubrick_integration.py — методов: 10
+  карточки: registry/t0.ubrick.integration/test_ubrick_integration.txt
+  описание: Интеграционные программы Этапа 3: исходники src/*.ubrk
+            собираются командой ubrick_cli compile и исполняются
+            uvm_cli; поведение — как у эталонов Этапов 1-2
+            (SPEC/L3-UBRICK.txt, ROADMAP.txt Этап 3).
+
+ВЕТВЬ t0.infra.registry [слой T0] — методов: 69
 
 - tools/check_limits.py — методов: 3
   карточки: registry/t0.infra.registry/check_limits.txt
@@ -40,6 +78,11 @@
   описание: Тесты генератора реестра: разбор аннотаций «# @» и «; @»,
             план карточек по исходным файлам (рендер и диск —
             tests/test_registry_scan_render.py).
+- tests/test_registry_scan_render.py — методов: 21
+  карточки: registry/t0.infra.registry/test_registry_scan_render.txt
+  описание: Тесты генератора реестра: рендер простым текстом, сверка и
+            очистка на диске (разбор и план —
+            tests/test_registry_scan.py).
 
 ВЕТВЬ t0.infra.tests [слой T0] — методов: 11
 
@@ -116,16 +159,6 @@
   описание: Тесты кодирования записей uAsm: инструкции (опкод и поле
             imm64), директивы DB/DW, размер записи для прохода 1 и
             запись целиком (SPEC/L2-UASM.txt, разделы 5-7).
-
-ВЕТВЬ t0.uasm.integration [слой T0] — методов: 12
-
-- tests/test_uasm_integration.py — методов: 12
-  карточки: registry/t0.uasm.integration/test_uasm_integration.txt
-  описание: Интеграционные программы Этапа 2: исходники src/*.uasm
-            собираются командой uasm_cli asm и исполняются uvm_cli;
-            «вывод символа» и «арифметика» — байт в байт с эталонами
-            Этапа 1, «вложенные CALL/RET» — метками, с тем же поведением
-            (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2).
 
 ВЕТВЬ t0.uasm.lex [слой T0] — методов: 25
 
@@ -226,15 +259,6 @@
   описание: Тесты словаря uBrick v0.1: примитивы, псевдонимы,
             производные слова, конструкции, поиск по имени и списки слов
             (SPEC/L3-UBRICK.txt, разделы 4-5).
-
-ВЕТВЬ t0.ubrick.integration [слой T0] — методов: 10
-
-- tests/test_ubrick_integration.py — методов: 10
-  карточки: registry/t0.ubrick.integration/test_ubrick_integration.txt
-  описание: Интеграционные программы Этапа 3: исходники src/*.ubrk
-            собираются командой ubrick_cli compile и исполняются
-            uvm_cli; поведение — как у эталонов Этапов 1-2
-            (SPEC/L3-UBRICK.txt, ROADMAP.txt Этап 3).
 
 ВЕТВЬ t0.ubrick.parse [слой T0] — методов: 59
 
@@ -391,4 +415,4 @@
             кодов и мнемоник, золотое соответствие код-мнемоника-imm64,
             проводка обработчиков, поиск неизвестных кодов и мнемоник.
 
-ВСЕГО МЕТОДОВ: 795
+ВСЕГО МЕТОДОВ: 816
