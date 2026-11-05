@@ -2,11 +2,11 @@
 # @file    tools/ubrick_dict.py
 # @layer   T0
 # @branch  t0.ubrick.dict
-# @desc    Словарь uBrick v0.1: примитивы и псевдонимы (имя -> одна
+# @desc    Словарь uBrick v0.4: примитивы и псевдонимы (имя -> одна
 # @desc    инструкция uAsm), производные слова с телами словами uBrick
 # @desc    и управляющие конструкции (SPEC/L3-UBRICK.txt, разделы 4-5).
 
-"""Словарь uBrick v0.1 (ветвь t0.ubrick.dict).
+"""Словарь uBrick v0.4 (ветвь t0.ubrick.dict).
 
 Чистые данные и функции поиска над ними. Примитив и псевдоним дают
 одну инструкцию uAsm: примитив — мнемонику без imm, псевдоним —
@@ -62,6 +62,9 @@ ALIASES = (
     ("KEY", "SYS 0"),     # ( -- c ) прочитать байт stdin; EOF -> 2^64-1
     ("EXIT", "RET"),      # ( -- ) выход из слова (возврат)
     ("BYE", "HALT 0"),    # ( -- ) завершить программу, код 0
+    ("QUIT", "HALT 16"),  # ( -- ) завершить программу, код 16 — ошибка
+                          # входа инструмента (SPEC/L4-SELFHOST.txt,
+                          # раздел 4)
 )
 
 # Формат записи производного слова: (имя, тело). Тело — кортеж слов
@@ -192,7 +195,7 @@ def primitive_names():
 
 # @method alias_names() -> tuple
 # @in    нет
-# @out   names: tuple — имена 4 псевдонимов
+# @out   names: tuple — имена 5 псевдонимов
 # @does  Список слов группы «псевдонимы» (SPEC, раздел 4.1).
 def alias_names():
     return tuple(rec[0] for rec in ALIASES)
@@ -209,9 +212,9 @@ def derived_names():
 
 # @method word_names() -> tuple
 # @in    нет
-# @out   names: tuple — все 53 имени словаря: примитивы, затем
+# @out   names: tuple — все 54 имени словаря: примитивы, затем
 # @out   псевдонимы, затем производные
-# @does  Полный список слов словаря uBrick v0.1.
+# @does  Полный список слов словаря uBrick v0.4.
 # @depends primitive_names, alias_names, derived_names
 def word_names():
     return primitive_names() + alias_names() + derived_names()
