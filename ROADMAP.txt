@@ -142,33 +142,33 @@ uasm_cli asm и исполняются uvm_cli; hello и arith — байт в �
 раунд-трип проверен и на его образе; сквозной запуск настоящими
 процессами (asm, затем run) покрыт тестом TestProcess.
 
-Этап 3 продолжается: закрыта ветвь t0.ubrick.compile — компиляция
-тела определения в строки uAsm по SPEC/L3-UBRICK.txt (разделы 2, 5
-и 7): tools/ubrick_compile.py, кирпичи new_counter и next_label
-(служебные метки _L<n>: счётчик один на программу, номера растут
-монотонно с 1), lit_line (PUSH imm, отрицательные оборачиваются
-по модулю 2^64), word_line (примитив и псевдоним врезаются одной
-инструкцией, EXIT — RET; производное и слово пользователя — CALL),
-construct_line (IF — JZ вперёд, ELSE — JMP вперёд и метка IF тут,
-THEN — метка тут, BEGIN — метка тут, UNTIL — JZ назад, AGAIN — JMP
-назад) и compile_body (тело — кортеж строк uAsm без метки слова
-и RET: их добавит t0.ubrick.build; тела производных слов хранятся
-в словаре кортежами слов uBrick — их превращение в элементы тоже
-войдёт в build); tests/test_ubrick_compile.py — 19 тестов: кирпичи,
-каждая конструкция, вложенность (IF в IF, IF в BEGIN), полные тела
-через t0.ubrick.parse, общий счётчик между телами.
+Этап 3 продолжается: закрыты ветви t0.ubrick.dict (словарь: 53
+слова), t0.ubrick.parse (разбор исходника в записи), t0.ubrick.compile
+(компиляция тел в строки uAsm) и t0.ubrick.build — сборка программы
+в текст uAsm и образ UVM (tools/ubrick_build.py): кирпичи prologue
+(CALL main, HALT 0), token_element и derived_elements (тела
+производных слов словаря — в элементы тел), word_lines (метка, тело,
+RET) и ref_lines (var/text — PUSH d_имя, RET), quote_literal (байты
+записи text — строковый литерал uAsm с escape), data_lines (d_имя:
+DW 0 либо DZ "литерал"), definition_lines, части derived_part
+(производные слова в порядке derived_names), definitions_part
+и data_part (записи исходника в порядке появления), build_text
+(четыре части, один счётчик _L<n> на программу) и build_ubrk (сборка
+образа ассемблером t0.uasm.assemble). Тесты (tests/test_ubrick_build.py,
+32 теста): кирпичи и части точно, порядок частей и нумерация меток
+(производные слова — _L1.._L6, определения исходника продолжают
+с _L7), данные, поведение эталонных программ на UVM (hello через
+text/prints, арифметика, var, вложенные вызовы, BEGIN/UNTIL,
+производные слова abs/min/max/lts/sext8) и ошибка сборки без main.
 
-Следующий малый шаг: Этап 3 (uBrick) — ветвь t0.ubrick.build:
-сборка программы в текст uAsm по SPEC/L3-UBRICK.txt (раздел 7)
-в четыре части: пролог (CALL main, HALT 0); производные слова
-словаря — метка, тело, RET (тела — кортежи слов uBrick из
-t0.ubrick.dict: превращение в элементы и компиляция теми же
-кирпичами); определения исходника в порядке появления — метка
-слова, тело, RET, слова var и text — PUSH d_имя, RET; секция данных
-d_имя — DW 0 (var) или DZ "литерал" (text); один счётчик _L<n>
-на всю программу, сборка образа ассемблером (t0.uasm.assemble);
-тесты: порядок частей, тела производных слов, данные, обязательное
-main, сборка и поведение эталонных программ.
+Следующий малый шаг: Этап 3 (uBrick) — ветвь t0.ubrick.cli: режим
+compile по SPEC/L3-UBRICK.txt (раздел 9): python tools/ubrick_cli.py
+compile ИСТОЧНИК.ubrk ОБРАЗ.uvm [--asm ТЕКСТ.uasm] — чтение исходника,
+parse_ubrk, build_ubrk, запись образа в файл; --asm дополнительно
+сохраняет промежуточный текст uAsm (build_text); ошибки — код
+выхода 2 и сообщение в stderr; тесты: успех, --asm, ошибки разбора
+и сборки, сквозной запуск настоящим процессом (compile, затем
+uvm_cli).
 
 Контракт обработчиков (действует, реализован в t0.uvm.decode/exec):
 к моменту вызова обработчика PC уже указывает на байт, следующий
@@ -356,3 +356,22 @@ main, сборка и поведение эталонных программ.
   зависимости — t0.ubrick.dict (primitive_instr) и t0.ubrick.parse
   (производитель элементов). Следующий шаг — ветвь t0.ubrick.build
   (сборка программы: пролог, словарь, определения, данные).
+- 2026-11-05 — Этап 3: закрыта ветвь t0.ubrick.build — сборка
+  программы uBrick в текст uAsm и образ (tools/ubrick_build.py):
+  кирпичи prologue (CALL main, HALT 0), token_element и
+  derived_elements (тела производных слов — в элементы тел),
+  word_lines (метка, тело, RET), ref_lines (var и text — PUSH d_имя,
+  RET), quote_literal (байты — строковый литерал uAsm: escape нуля,
+  табуляции, переводов, кавычки и слеша), data_lines (d_имя: DW 0
+  либо DZ "литерал"), definition_lines и части derived_part,
+  definitions_part, data_part, build_text (четыре части, один
+  счётчик _L<n> на программу: производные слова первыми) и
+  build_ubrk (сборка образа ассемблером t0.uasm.assemble, ошибки —
+  наружу); tests/test_ubrick_build.py — 32 теста: кирпичи и части
+  точно (not, min, prints дословно из SPEC), раунд-трип литералов
+  данных, порядок частей и продолжение нумерации меток (_L7
+  после _L1.._L6), поведение эталонных программ на UVM (hello
+  через text/prints, арифметика (2+3)*4, var хранением и чтением,
+  вложенные вызовы, цикл BEGIN/UNTIL, производные слова
+  abs/min/max/lts/sext8) и ошибка сборки без main. Следующий шаг —
+  ветвь t0.ubrick.cli (режим compile).
