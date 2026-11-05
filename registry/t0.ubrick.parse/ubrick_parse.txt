@@ -5,7 +5,7 @@
 Методов: 23
 Генерируется tools/registry_scan.py; вручную не редактировать.
 Описание: Разбор исходника uBrick в записи: определения слов «: ... ;»,
-          var, text, слова и литералы тел (SPEC/L3-UBRICK.txt v0.2,
+          var, text, слова и литералы тел (SPEC/L3-UBRICK.txt v0.3,
           разделы 3 и 8); ошибки «uBrick: строка N: текст».
 
 МЕТОД split_lines(text) -> list

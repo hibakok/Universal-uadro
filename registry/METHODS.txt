@@ -315,7 +315,7 @@
   карточки: registry/t0.ubrick.parse/ubrick_parse.txt
   описание: Разбор исходника uBrick в записи: определения слов «: ...
             ;», var, text, слова и литералы тел (SPEC/L3-UBRICK.txt
-            v0.2, разделы 3 и 8); ошибки «uBrick: строка N: текст».
+            v0.3, разделы 3 и 8); ошибки «uBrick: строка N: текст».
 - tests/test_ubrick_parse.py — методов: 14
   карточки: registry/t0.ubrick.parse/test_ubrick_parse.txt
   описание: Тесты разбора uBrick: кирпичи строк, имён и строковых
