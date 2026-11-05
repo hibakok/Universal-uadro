@@ -373,3 +373,23 @@ JOURNAL — ЖУРНАЛ ЭТАПОВ UNIVERSAL UADRO
   границы гоняют полный буфер через UVM — около минуты на пару), QUIT
   в test_ubrick_dict.py и test_ubrick_build.py (код завершения 16).
   Следующий шаг — подшаг 2 ветви l2.uasm.assemble: строки и слова.
+- 2026-11-06 — Этап 4: продолжена ветвь l2.uasm.assemble — подшаг 2
+  (строки и слова, SPEC/L4-SELFHOST.txt v0.3, раздел 5А): новые
+  use-включения asmwords.ubrk (клетки bp/be/ln/lq, cp/qe/cq, wa/wl,
+  ra/rl, argc/ap/ae; кирпичи isspace, cstep/findsemi, crstep, rtrim/
+  ltrim, lfstep/linestep, spstep/findfirst, splitword, argstep/
+  splitargs — деление буфера на строки со счётчиком, чистка строки,
+  первое слово, аргументы парами 16 байтов LE) и asmmnem.ubrk (шесть
+  text-строк мнемоник по диапазонам кодов; mstep/entrymatch,
+  rstep/rangematch, mnem — поиск кода по мнемонике); главный файл —
+  printu, printw, fail, doline и listline (промежуточный листинг
+  «N:слово[=код] аргументы», заменяется разбором записей в подшаге 4).
+  Тесты: 27 (листинг и нумерация, чистка и кавычки, все 38 мнемоник
+  с кодами эталонной таблицы, бинарный вход, лимит 256 аргументов
+  и хвостовые пробелы, границы 512 КиБ, сквозной прогон процессами).
+  Заодно: реестр методов переведён на двухуровневый индекс —
+  registry/METHODS.txt перерос лимит 500 строк и теперь перечисляет
+  только ветви, файлы и описания ветви — в registry/<ветвь>/INDEX.txt;
+  рендер выделен в tools/registry_render.py (CHARTER.txt, п. 4;
+  DOC/CONVENTIONS.txt).
+  Следующий шаг — подшаг 3: литералы и имена.
