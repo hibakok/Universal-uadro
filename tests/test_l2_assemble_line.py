@@ -4,25 +4,28 @@
 # @branch  l2.uasm.assemble
 # @desc    Тесты подшага 4 ветви l2.uasm.assemble — разбор строки
 # @desc    в запись (src/l2/asmline.ubrk — собственное воплощение эталона
-# @desc    tools/uasm_line.py): листинг записей «N:L имя» | «N:C имя=
-# @desc    значение» | «N:I код [операнд]» | «N:DB|DW argc» | «N:DS|DZ
-# @desc    длина»; ошибки разбора строки — «uAsm: строка N: текст»
-# @desc    и код 16 по разделу 7 SPEC/L2-UASM.txt (SPEC/L4-SELFHOST.txt,
-# @desc    раздел 5А). Ожидания записей и ошибок строятся эталоном
+# @desc    tools/uasm_line.py). Выход прохода 1 — листинг символов
+# @desc    «имя=значение»: строка-метка даёт символ со значением 0 (записей
+# @desc    до неё нет), строка-константа — со значением литерала по модулю
+# @desc    2^64; инструкции и директивы данных символов не дают — пустой
+# @desc    вывод без ошибки (операнд остаётся текстом, ошибки значений —
+# @desc    только в проходе 2); ошибки разбора строки — «uAsm: строка N:
+# @desc    текст» и код 16 по разделу 7 SPEC/L2-UASM.txt (SPEC/
+# @desc    L4-SELFHOST.txt, раздел 5А). Ожидания строятся эталоном
 # @desc    parse_line — паритет с источником истины поведения.
 
 """Тесты разбора строки в запись подшага 4 ветви l2.uasm.assemble.
 
 Собственный ассемблер (кирпичи l2_image и feed) прогоняется на текстах;
 каждая непустая строка даёт запись. Ожидание строит эталон
-tools/uasm_line.py (parse_line): вид записи переводится в строку
-листинга «N:V …» — метка «L имя», константа «C имя=значение»
-(значение по модулю 2^64), инструкция «I код [операнд]», DB/DW —
-число аргументов, DS/DZ — длина декодированных байтов (DZ без байта 0 —
-его добавит кодирование, подшаг 6). Ошибка разбора — диагностическая
-строка «uAsm: строка 1: текст» и код 16; запись ошибки эталона —
-источник истины текста. Сплошная сверка (test_sweep) гоняет
-представителей всех видов строк через оба воплощения.
+tools/uasm_line.py (parse_line): метка — символ «имя=0» (одна строка —
+записей до метки нет, адрес 0), константа — «имя=значение» (значение
+по модулю 2^64), инструкция и директива данных — пустой вывод (символов
+нет; размер записей для адресов — tests/test_l2_assemble_sym.py).
+Ошибка разбора — диагностическая строка «uAsm: строка 1: текст»
+и код 16; запись ошибки эталона — источник истины текста. Сплошная
+сверка (test_sweep) гоняет представителей всех видов строк через оба
+воплощения.
 
 Порядок разбора (SPEC/L2-UASM.txt, раздел 7): метка — прежде
 мнемоники («PUSH:» — метка), мнемоника — прежде константы («PUSH = 5» —
@@ -91,13 +94,15 @@ def feed(text):
 
 # @method record(line) -> tuple
 # @in    line: str — одна строка исходника uAsm
-# @out   pair: tuple — (код завершения, строка листинга записи)
+# @out   pair: tuple — (код завершения, байты stdout) ожидание
 # @does  Строит ожидание эталоном (кирпич паритета с tools/uasm_line.py,
-# @does  источник истины поведения): parse_line даёт запись — вид
-# @does  переводится в строку листинга «1:V …»; None (пустая строка
-# @does  либо комментарий) — пустой вывод; ошибка — диагностика
-# @does  «uAsm: строка 1: текст» и код 16.
-# @depends parse_line, CODES
+# @does  источник истины поведения): parse_line даёт запись — метка —
+# @does  символ «имя=0» (записей до неё нет), константа — «имя=значение»
+# @does  (значение по модулю 2^64), инструкция и директива данных —
+# @does  пустой вывод (символов нет); None (пустая строка либо
+# @does  комментарий) — пустой вывод; ошибка — диагностика «uAsm:
+# @does  строка 1: текст» и код 16.
+# @depends parse_line, WORD
 def record(line):
     rec = parse_line(line)
     if rec is None:
@@ -106,19 +111,10 @@ def record(line):
     if kind == "error":
         return 16, ("uAsm: строка 1: " + rec[1] + "\n").encode("utf-8")
     if kind == "label":
-        return 0, ("1:L " + rec[1] + "\n").encode("utf-8")
+        return 0, ("%s=0\n" % rec[1]).encode("utf-8")
     if kind == "const":
-        return 0, ("1:C %s=%d\n" % (rec[1], rec[2] % WORD)).encode("utf-8")
-    if kind == "instr":
-        out = "1:I %d" % CODES[rec[1]]
-        if rec[2] is not None:
-            out += " " + rec[2]
-        return 0, (out + "\n").encode("utf-8")
-    directive, data = rec[1], rec[2]
-    if directive in ("DB", "DW"):
-        return 0, ("1:%s %d\n" % (directive, len(data))).encode("utf-8")
-    n = len(data) - (1 if directive == "DZ" else 0)
-    return 0, ("1:%s %d\n" % (directive, n)).encode("utf-8")
+        return 0, ("%s=%d\n" % (rec[1], rec[2] % WORD)).encode("utf-8")
+    return 0, b""
 
 
 # @method line_want(line) -> tuple
@@ -140,9 +136,10 @@ class TestParity(unittest.TestCase):
     # @out   нет
     # @does  Представители всех видов строк и ошибок — через эталон
     # @does  parse_line и собственное воплощение байт в байт: мнемоники
-    # @does  с операндами и без, метки (в том числе PUSH: — роль слова
-    # @does  определяет позиция), константы всех форм с минусом
-    # @does  и границами диапазона, директивы данных, ошибки всех
+    # @does  с операндами и без (пустой вывод — символов нет), метки
+    # @does  (в том числе PUSH: — роль слова определяет позиция),
+    # @does  константы всех форм с минусом и границами диапазона
+    # @does  (значения по модулю 2^64), директивы данных, ошибки всех
     # @does  текстов раздела 7 SPEC, пробелы, табуляции и комментарии.
     # @depends feed, line_want
     def test_sweep(self):
@@ -186,29 +183,30 @@ class TestOrder(unittest.TestCase):
     # @out   нет
     # @does  Слово с двоеточием разбирается раньше мнемоники: «PUSH:» —
     # @does  метка с именем PUSH (роль слова определяет позиция, SPEC,
-    # @does  раздел 3), а не инструкция.
+    # @does  раздел 3), а не инструкция — символ PUSH = 0.
     # @depends feed
     def test_label_before_mnemonic(self):
-        self.assertEqual(feed(b"PUSH:\n"), (0, b"1:L PUSH\n"))
+        self.assertEqual(feed(b"PUSH:\n"), (0, b"PUSH=0\n"))
 
     # @method test_mnemonic_before_const() -> None
     # @in    нет
     # @out   нет
     # @does  Мнемоника разбирается раньше константы: «PUSH = 5» —
     # @does  инструкция с операндом «= 5» (у PUSH есть поле imm64);
-    # @does  ошибка литерала возможна только в проходе 2.
+    # @does  символов нет, ошибка литерала возможна только в проходе 2.
     # @depends feed
     def test_mnemonic_before_const(self):
-        self.assertEqual(feed(b"PUSH = 5\n"), (0, b"1:I 1 = 5\n"))
+        self.assertEqual(feed(b"PUSH = 5\n"), (0, b""))
 
     # @method test_directive_before_const() -> None
     # @in    нет
     # @out   нет
     # @does  Директива разбирается раньше константы: «DB = 5» — данные
-    # @does  с двумя аргументами «=» и «5» (значения решит проход 2).
+    # @does  с двумя аргументами «=» и «5» (значения решит проход 2);
+    # @does  символов нет.
     # @depends feed
     def test_directive_before_const(self):
-        self.assertEqual(feed(b"DB = 5\n"), (0, b"1:DB 2\n"))
+        self.assertEqual(feed(b"DB = 5\n"), (0, b""))
 
     # @method test_eq_in_first_word() -> None
     # @in    нет
@@ -217,13 +215,13 @@ class TestOrder(unittest.TestCase):
     # @does  слово: «x=5» без пробелов — константа с именем x.
     # @depends feed
     def test_eq_in_first_word(self):
-        self.assertEqual(feed(b"x=5\n"), (0, b"1:C x=5\n"))
+        self.assertEqual(feed(b"x=5\n"), (0, b"x=5\n"))
 
     # @method test_eq_in_quotes() -> None
     # @in    нет
     # @out   нет
     # @does  Знак «=» внутри литералов в кавычках константу не открывает:
-    # @does  «foo \"a=b\"» — ни один вид записи, ошибка «неизвестная
+    # @does  «foo "a=b"» — ни один вид записи, ошибка «неизвестная
     # @does  мнемоника foo».
     # @depends feed
     def test_eq_in_quotes(self):
@@ -239,7 +237,7 @@ class TestOrder(unittest.TestCase):
     # @does  не считает «=» в кавычках знаком константы).
     # @depends feed
     def test_const_eq_in_operand(self):
-        self.assertEqual(feed(b"x = '='\n"), (0, b"1:C x=61\n"))
+        self.assertEqual(feed(b"x = '='\n"), (0, b"x=61\n"))
 
 
 class TestConst(unittest.TestCase):
@@ -254,12 +252,12 @@ class TestConst(unittest.TestCase):
     # @depends feed
     def test_values(self):
         self.assertEqual(feed(b"x = -1\n"),
-                         (0, b"1:C x=18446744073709551615\n"))
+                         (0, b"x=18446744073709551615\n"))
         self.assertEqual(feed(b"x = -9223372036854775808\n"),
-                         (0, b"1:C x=9223372036854775808\n"))
+                         (0, b"x=9223372036854775808\n"))
         self.assertEqual(feed(b"k = 0xDeAdBeEf\n"),
-                         (0, b"1:C k=3735928559\n"))
-        self.assertEqual(feed(b"k = 'A'\n"), (0, b"1:C k=65\n"))
+                         (0, b"k=3735928559\n"))
+        self.assertEqual(feed(b"k = 'A'\n"), (0, b"k=65\n"))
 
     # @method test_bad_names() -> None
     # @in    нет
@@ -318,12 +316,12 @@ class TestInstr(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Операнд остаётся текстом (имя разрешит проход 2): «CALL
-    # @does  main» — код 67 и операнд main; «PUSH 1 2» — операнд из
-    # @does  двух слов (ошибка литерала — только в проходе 2).
+    # @does  main» и «PUSH 1 2» разбираются без ошибки — символов нет,
+    # @does  вывод пуст; ошибка литерала возможна только в проходе 2.
     # @depends feed
     def test_operand_is_text(self):
-        self.assertEqual(feed(b"CALL main\n"), (0, b"1:I 67 main\n"))
-        self.assertEqual(feed(b"PUSH 1 2\n"), (0, b"1:I 1 1 2\n"))
+        self.assertEqual(feed(b"CALL main\n"), (0, b""))
+        self.assertEqual(feed(b"PUSH 1 2\n"), (0, b""))
 
     # @method test_missing_operand() -> None
     # @in    нет
@@ -374,21 +372,20 @@ class TestData(unittest.TestCase):
                     (16, ("uAsm: строка 1: пустая директива " + m + "\n")
                          .encode("utf-8")))
 
-    # @method test_string_literal_lengths() -> None
+    # @method test_string_literals_parse() -> None
     # @in    нет
     # @out   нет
-    # @does  Длина литералов DS/DZ — декодированные байты: 'a' плюс шесть
-    # @does  escape — 7 байтов (escape по байту), многобайтовый UTF-8
-    # @does  дословно («привет» — 12); байт 0 добавит только кодирование
-    # @does  DZ (подшаг 6).
+    # @does  Строковые литералы DS/DZ разбираются без ошибки — символов
+    # @does  нет, вывод пуст; длины декодированных байтов (escape,
+    # @does  многобайтовый UTF-8) видны адресами меток —
+    # @does  tests/test_l2_assemble_sym.py (test_string_sizes).
     # @depends feed
-    def test_string_literal_lengths(self):
-        self.assertEqual(feed(b'DS "a\\n\\r\\t\\\\\\"\\0"\n'),
-                         (0, b"1:DS 7\n"))
-        self.assertEqual(feed('DS "привет"\n'.encode("utf-8")),
-                         (0, '1:DS 12\n'.encode("utf-8")))
-        self.assertEqual(feed('DZ "мир!"\n'.encode("utf-8")),
-                         (0, '1:DZ 7\n'.encode("utf-8")))
+    def test_string_literals_parse(self):
+        for line in ('DS "a\\n\\r\\t\\\\\\"\\0"', 'DS "привет"',
+                     'DZ "мир!"', 'DS ""', 'DZ "ab"'):
+            with self.subTest(line=line):
+                self.assertEqual(feed((line + "\n").encode("utf-8")),
+                                 (0, b""))
 
     # @method test_bad_string_literal() -> None
     # @in    нет
@@ -414,8 +411,10 @@ class TestProcess(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Команды контракта процессами: ubrick_cli compile, затем
-    # @does  uvm_cli с входным файлом; stdout — листинг записей всех
-    # @does  видов, код 0.
+    # @does  uvm_cli с входным файлом; stdout — листинг символов всех
+    # @does  видов записей: a = 10 (NOP 1 + PUSH 9 до неё), константа
+    # @does  x = 5 (байтов не даёт), end = 23 (DB 2 + DW 8 + DS 1 +
+    # @does  DZ 2 после a), код 0.
     # @uses   subprocess — запуск инструментов настоящими процессами
     def test_process_run(self):
         import subprocess
@@ -426,7 +425,7 @@ class TestProcess(unittest.TestCase):
             src = os.path.join(tmp, "in.uasm")
             with open(src, "wb") as handle:
                 handle.write(b"NOP\nPUSH 1\na:\nDB 1 2\nDW x\n"
-                             b'DS "s"\nDZ "z"\nx = 5\n')
+                             b'DS "s"\nDZ "z"\nx = 5\nend:\n')
             compile_code = subprocess.call(
                 [sys.executable,
                  os.path.join(repo_root(), "tools", "ubrick_cli.py"),
@@ -441,9 +440,7 @@ class TestProcess(unittest.TestCase):
                     stdin=handle, capture_output=True)
             self.assertEqual(run.returncode, 0)
             self.assertEqual(
-                run.stdout,
-                b"1:I 0\n2:I 1 1\n3:L a\n4:DB 2\n5:DW 1\n6:DS 1\n"
-                b"7:DZ 1\n8:C x=5\n")
+                run.stdout, b"a=10\nx=5\nend=23\n")
 
 
 if __name__ == "__main__":
