@@ -1,0 +1,402 @@
+; @uadro
+; @file    src/l2/asmlex.ubrk
+; @layer   L2
+; @branch  l2.uasm.assemble
+; @desc    Ассемблер uAsm — литералы и имена: use-включение главного
+; @desc    файла src/l2/assemble.ubrk (SPEC/L4-SELFHOST.txt, раздел 5А,
+; @desc    подшаг 3). Чистые лексические кирпичи без печати — собственное
+; @desc    воплощение эталона tools/uasm_lex.py (SPEC/L2-UASM.txt,
+; @desc    разделы 3-4): числовые формы (десятичная, шестнадцатеричная,
+; @desc    двоичная, символьная) с контролем переполнения слова, минус
+; @desc    и диапазон -2^63..2^64-1, имена [A-Za-z_][A-Za-z0-9_]* и скан
+; @desc    строкового литерала DS/DZ (длина декодированных байтов).
+; @desc    Значение разбора — в клетке lexv; вид исхода (kind):
+; @desc    1 — форма подошла, 2 — цифры верны, но значение вне диапазона,
+; @desc    0 — форма нарушена; скан строк печатает и хранит только длину.
+
+; Клетки числовой формы (parseuns/lexstep): lexb — основание системы
+; (10/16/2), lp — позиция следующего байта цифр, le — предел (за
+; последним байтом цифр), lexv — накопленное значение (модуль без
+; знака), lexo — флаг переполнения (1: модуль превысил 2^64-1).
+var lexb
+var lp
+var le
+var lexv
+var lexo
+
+; Клетки разбора имени (isname/namestep): np — позиция следующего байта,
+; nn — предел.
+var np
+var nn
+
+; Клетки скана строкового литерала (parsestr/strstep): sp — позиция
+; следующего байта, se — предел, sl — длина декодированных байтов,
+; sf — флаг ошибки (1: литерал неверен).
+var sp
+var se
+var sl
+var sf
+
+; @method hexdig ( c -- v 1 | 0 )
+; @in    c: слово — байт 0..255
+; @out   pair: v и флаг 1 — значение шестнадцатеричной цифры 0..15;
+; @out   либо 0 без флага — байт не шестнадцатеричная цифра
+; @does  Таблица шестнадцатеричных цифр сравнениями (SPEC/L2-UASM.txt,
+; @does  раздел 4): '0'-'9' (48-57) — 0..9, 'A'-'F' (65-70) — 10..15,
+; @does  'a'-'f' (97-102) — 10..15; кирпич lexstep.
+; @depends LTU, LEU, SUB, DUP, DROP, IF, EXIT, THEN
+: hexdig
+  DUP 48 LTU IF DROP 0 EXIT THEN
+  DUP 57 LEU IF 48 SUB 1 EXIT THEN
+  DUP 65 LTU IF DROP 0 EXIT THEN
+  DUP 70 LEU IF 55 SUB 1 EXIT THEN
+  DUP 97 LTU IF DROP 0 EXIT THEN
+  DUP 102 LEU IF 87 SUB 1 ELSE DROP 0 THEN ;
+
+; @method lexstep ( -- done )
+; @in    нет (клетки lexb, lp, le, lexv, lexo — состояние разбора)
+; @out   done: слово — 0: цифра учтена, разбор продолжается; 1: предел
+; @out   достигнут либо байт не цифра (вызывающий различает по lp < le)
+; @does  Один шаг накопления цифр числовой формы (SPEC/L2-UASM.txt,
+; @does  раздел 4): hexdig даёт значение v < lexb, иначе стоп (форма
+; @does  нарушена; не-цифра оставляет на стеке только свой ноль и байт
+; @does  c — после IF снимается ровно c); при включённом lexo цифра
+; @does  проверяется, но не копится — форма доразбирается до конца,
+; @does  чтобы отличить переполнение от мусора; шаг копит
+; @does  lexv = lexv * lexb + v, контроль переполнения — обратное
+; @does  деление: без обрыва по модулю 2^64 частное acc / lexb обязано
+; @does  вернуть lexv (acc = lexv * lexb + v, v < lexb); обрыв частного
+; @does  — переполнение слова, lexo = 1.
+; @depends lexb, lp, le, lexv, lexo, LTU, not, LOAD8, hexdig, MUL, ADD,
+; @depends UDIV, NEQ, EQ, STORE64, SWAP, DROP, DUP, IF, EXIT, THEN
+: lexstep
+  lp LOAD64 le LOAD64 LTU not IF 1 EXIT THEN
+  lp LOAD64 LOAD8 DUP hexdig
+  not IF DROP 1 EXIT THEN
+  DUP lexb LOAD64 LTU not IF DROP DROP 1 EXIT THEN
+  SWAP DROP
+  lexo LOAD64
+  IF DROP lp LOAD64 1 ADD lp STORE64 0 EXIT THEN
+  lexv LOAD64 lexb LOAD64 MUL ADD
+  DUP lexb LOAD64 UDIV lexv LOAD64 NEQ
+  IF 1 lexo STORE64 THEN
+  lexv STORE64
+  lp LOAD64 1 ADD lp STORE64
+  0 ;
+
+; @method parseuns ( a l base -- kind )
+; @in    a: слово — адрес первого байта цифр
+; @in    l: слово — число байтов цифр
+; @in    base: слово — основание системы: 10, 16 или 2
+; @out   kind: слово — 1: модуль разобран, lexv — значение 0..2^64-1;
+; @out   2: все байты — цифры, но модуль превысил 2^64-1 (lexo);
+; @out   0: форма нарушена — не-цифра до конца слова
+; @does  Накапливает модуль числовой формы без знака (кирпичи decform,
+; @does  hexform, binform): ставит lexb/lp/le/lexv/lexo и гонит lexstep
+; @does  до стопа; переполнение доразбирает форму — чтобы различить
+; @does  «вне диапазона» (kind 2) и «плохой литерал» (kind 0), как
+; @does  parse_dec эталона и in_literal_range по его значению.
+; @depends lexb, le, lp, lexv, lexo, lexstep, ADD, ROT, SWAP, OVER, DROP,
+; @depends STORE64, LOAD64, EQ, IF, ELSE, THEN, EXIT
+: parseuns
+  lexb STORE64
+  OVER OVER ADD le STORE64
+  DROP lp STORE64
+  0 lexv STORE64
+  0 lexo STORE64
+  BEGIN lexstep UNTIL
+  lexo LOAD64
+  IF lp LOAD64 le LOAD64 EQ IF 2 ELSE 0 THEN EXIT THEN
+  lp LOAD64 le LOAD64 EQ IF 1 ELSE 0 THEN ;
+
+; @method decform ( a l -- kind )
+; @in    a: слово — адрес первого байта слова
+; @in    l: слово — число байтов слова
+; @out   kind: слово — 1/2: десятичная форма (parseuns), 0: не форма
+; @does  Распознаёт десятичную форму [0-9]+ (SPEC/L2-UASM.txt, раздел 4):
+; @does  хотя бы один байт, все байты — ASCII-цифры; parse_dec эталона;
+; @does  кирпич numform.
+; @depends parseuns, EQ, DUP, DROP, IF, EXIT, THEN
+: decform
+  DUP 0 EQ IF DROP DROP 0 EXIT THEN
+  10 parseuns ;
+
+; @method hexform ( a l -- kind )
+; @in    a: слово — адрес первого байта слова
+; @in    l: слово — число байтов слова
+; @out   kind: слово — 1/2: форма 0x… (parseuns), 0: не форма
+; @does  Распознаёт шестнадцатеричную форму 0x[0-9A-Fa-f]+ (SPEC/
+; @does  L2-UASM.txt, раздел 4: префикс строчными, после него хотя бы
+; @does  одна цифра, длина не меньше трёх байтов); parse_hex эталона;
+; @does  кирпич numform.
+; @depends parseuns, LTU, not, LOAD8, EQ, ADD, SUB, SWAP, ROT, OVER,
+; @depends DROP, IF, EXIT, THEN
+: hexform
+  DUP 3 LTU IF DROP DROP 0 EXIT THEN
+  OVER LOAD8 48 EQ not IF DROP DROP 0 EXIT THEN
+  OVER 1 ADD LOAD8 120 EQ not IF DROP DROP 0 EXIT THEN
+  OVER 2 ADD ROT DROP SWAP 2 SUB 16 parseuns ;
+
+; @method binform ( a l -- kind )
+; @in    a: слово — адрес первого байта слова
+; @in    l: слово — число байтов слова
+; @out   kind: слово — 1/2: форма 0b… (parseuns), 0: не форма
+; @does  Распознаёт двоичную форму 0b[01]+ (SPEC/L2-UASM.txt, раздел 4:
+; @does  префикс строчными, после него хотя бы одна цифра 0/1); parse_bin
+; @does  эталона; кирпич numform.
+; @depends parseuns, LTU, not, LOAD8, EQ, ADD, SUB, SWAP, ROT, OVER,
+; @depends DROP, IF, EXIT, THEN
+: binform
+  DUP 3 LTU IF DROP DROP 0 EXIT THEN
+  OVER LOAD8 48 EQ not IF DROP DROP 0 EXIT THEN
+  OVER 1 ADD LOAD8 98 EQ not IF DROP DROP 0 EXIT THEN
+  OVER 2 ADD ROT DROP SWAP 2 SUB 2 parseuns ;
+
+; @method escval ( c -- v 1 | 0 )
+; @in    c: слово — байт 0..255
+; @out   pair: v и флаг 1 — код escape-символа; либо 0 без флага — c не
+; @out   escape символьного литерала
+; @does  Таблица escape символьного литерала (SPEC/L2-UASM.txt, раздел 4):
+; @does  '\n' 10, '\r' 13, '\t' 9, '\\' 92, '\'' 39, '\0' 0; CHAR_ESCAPES
+; @does  эталона; кирпич charform.
+; @depends EQ, DUP, DROP, ADD, IF, EXIT, THEN
+: escval
+  DUP 110 EQ IF DROP 10 1 EXIT THEN
+  DUP 114 EQ IF DROP 13 1 EXIT THEN
+  DUP 116 EQ IF DROP 9 1 EXIT THEN
+  DUP 92 EQ IF DROP 92 1 EXIT THEN
+  DUP 39 EQ IF DROP 39 1 EXIT THEN
+  48 EQ IF 0 1 EXIT THEN
+  0 ;
+
+; @method charform ( a l -- kind )
+; @in    a: слово — адрес первого байта слова
+; @in    l: слово — число байтов слова
+; @out   kind: слово — 1: символьная форма, lexv — код 0..255; 0: не форма
+; @does  Распознаёт символьную форму 'X' или '\e' (SPEC/L2-UASM.txt,
+; @does  раздел 4, parse_char эталона): три байта 39 c 39 — код c,
+; @does  любой байт посередине (в том числе кавычки, апостроф и сам
+; @does  обратный слэш); четыре байта 39 92 e 39 — escape-код escval,
+; @does  неизвестный e — не форма; значения байта диапазона не нарушают.
+; @depends escval, EQ, not, LOAD8, lexv, DUP, DROP, OVER, ADD, ROT, SWAP,
+; @depends STORE64, IF, ELSE, THEN, EXIT
+: charform
+  DUP 3 EQ
+  IF
+    OVER LOAD8 39 EQ not IF DROP DROP 0 EXIT THEN
+    OVER 2 ADD LOAD8 39 EQ not IF DROP DROP 0 EXIT THEN
+    DROP 1 ADD LOAD8 lexv STORE64 1 EXIT
+  THEN
+  DUP 4 EQ
+  IF
+    OVER LOAD8 39 EQ not IF DROP DROP 0 EXIT THEN
+    OVER 1 ADD LOAD8 92 EQ not IF DROP DROP 0 EXIT THEN
+    OVER 3 ADD LOAD8 39 EQ not IF DROP DROP 0 EXIT THEN
+    OVER 2 ADD LOAD8 escval
+    not IF DROP DROP 0 EXIT THEN
+    ROT DROP SWAP DROP lexv STORE64 1
+  ELSE
+    DROP DROP 0
+  THEN ;
+
+; @method numform ( a l -- kind )
+; @in    a: слово — адрес первого байта слова без знака
+; @in    l: слово — число байтов слова без знака
+; @out   kind: слово — 1: lexv — модуль 0..2^64-1; 2: цифры верны, модуль
+; @out   вне 2^64-1; 0: ни одна форма не подошла
+; @does  Пробует формы без знака по порядку эталона literal_value
+; @does  (tools/uasm_lex.py): десятичная, шестнадцатеричная, двоичная,
+; @does  символьная (SPEC/L2-UASM.txt, раздел 4); форма с верными
+; @does  цифрами и переполнением тоже «подошла» — kind 2, диапазон
+; @does  решает numlit (как значение parse_* эталона вне диапазона);
+; @does  кирпич numlit.
+; @depends decform, hexform, binform, charform, DUP, IF, EXIT, THEN, DROP
+: numform
+  OVER OVER decform DUP IF ROT DROP SWAP DROP EXIT THEN DROP
+  OVER OVER hexform DUP IF ROT DROP SWAP DROP EXIT THEN DROP
+  OVER OVER binform DUP IF ROT DROP SWAP DROP EXIT THEN DROP
+  OVER OVER charform ROT DROP SWAP DROP ;
+
+; @method numlit ( a l -- kind )
+; @in    a: слово — адрес первого байта слова-аргумента
+; @in    l: слово — число байтов слова-аргумента
+; @out   kind: слово — 1: числовой литерал в диапазоне, lexv — значение
+; @out   по модулю 2^64 (отрицательные обёрнуты); 2: цифры верны,
+; @out   значение вне -2^63..2^64-1; 0: не числовой литерал
+; @does  Полный числовой литерал (SPEC/L2-UASM.txt, раздел 4, parse_number
+; @does  и in_literal_range эталона): минус (45) без пробела перед формой
+; @does  берёт тело после знака; модуль без знака 0..2^64-1 всегда
+; @does  в диапазоне, с минусом — модуль не больше 2^63; отрицательное
+; @does  значение оборачивается по модулю 2^64 (NEG, SPEC/L0-UVM.txt,
+; @does  раздел 1); пустое слово и «-» без тела — не литерал.
+; @depends numform, lexv, LOAD8, LOAD64, STORE64, EQ, LEU, NEG, ADD, SUB,
+; @depends SWAP, DUP, OVER, IF, ELSE, THEN, EXIT, DROP
+: numlit
+  DUP 0 EQ IF DROP DROP 0 EXIT THEN
+  OVER LOAD8 45 EQ
+  IF
+    SWAP 1 ADD SWAP 1 SUB
+    numform
+    DUP 0 EQ IF EXIT THEN
+    DUP 2 EQ IF EXIT THEN
+    DROP
+    lexv LOAD64 0x8000000000000000 LEU
+    IF lexv LOAD64 NEG lexv STORE64 1 ELSE 2 THEN
+  ELSE
+    numform
+  THEN ;
+
+; @method isletter ( c -- ф )
+; @in    c: слово — байт 0..255
+; @out   ф: слово — 1: ASCII-буква 'A'-'Z' (65-90) или 'a'-'z' (97-122);
+; @out   0: иначе
+; @does  Признак буквы имени (SPEC/L2-UASM.txt, раздел 3, NAME_FIRST
+; @does  эталона); кирпичи namefirst и namerest.
+; @depends LTU, LEU, DUP, DROP, IF, EXIT, THEN
+: isletter
+  DUP 65 LTU IF DROP 0 EXIT THEN
+  DUP 90 LEU IF DROP 1 EXIT THEN
+  DUP 97 LTU IF DROP 0 EXIT THEN
+  122 LEU ;
+
+; @method isdigit4 ( c -- ф )
+; @in    c: слово — байт 0..255
+; @out   ф: слово — 1: ASCII-цифра '0'-'9' (48-57); 0: иначе
+; @does  Признак цифры имени (SPEC/L2-UASM.txt, раздел 3); кирпич
+; @does  namerest.
+; @depends LTU, LEU, DUP, DROP, IF, EXIT, THEN
+: isdigit4
+  DUP 48 LTU IF DROP 0 EXIT THEN
+  57 LEU ;
+
+; @method namefirst ( c -- ф )
+; @in    c: слово — первый байт слова
+; @out   ф: слово — 1: буква или подчёркивание '_' (95); 0: иначе
+; @does  Признак первого байта имени [A-Za-z_] (SPEC/L2-UASM.txt,
+; @does  раздел 3); кирпич isname.
+; @depends isletter, EQ, DUP, DROP, IF, EXIT, THEN
+: namefirst
+  DUP isletter IF DROP 1 EXIT THEN
+  95 EQ ;
+
+; @method namerest ( c -- ф )
+; @in    c: слово — байт имени после первого
+; @out   ф: слово — 1: буква, цифра или подчёркивание; 0: иначе
+; @does  Признак остальных байтов имени [A-Za-z0-9_] (SPEC/L2-UASM.txt,
+; @does  раздел 3, NAME_REST эталона); кирпич namestep.
+; @depends isletter, isdigit4, EQ, DUP, DROP, IF, EXIT, THEN
+: namerest
+  DUP isletter IF DROP 1 EXIT THEN
+  DUP isdigit4 IF DROP 1 EXIT THEN
+  95 EQ ;
+
+; @method namestep ( -- done )
+; @in    нет (клетки np, nn — состояние разбора)
+; @out   done: слово — 0: байт имени учтён; 1: предел либо байт не имя
+; @out   (вызывающий различает по np < nn)
+; @does  Один шаг проверки байтов имени (кирпич isname): namerest решает
+; @does  байт; не-байт-имени — стоп, форма нарушена.
+; @depends np, nn, LTU, not, LOAD8, namerest, ADD, STORE64, IF, ELSE, THEN
+: namestep
+  np LOAD64 nn LOAD64 LTU not IF 1 EXIT THEN
+  np LOAD64 LOAD8 namerest
+  IF np LOAD64 1 ADD np STORE64 0 ELSE 1 THEN ;
+
+; @method isname ( a l -- ф )
+; @in    a: слово — адрес первого байта слова
+; @in    l: слово — число байтов слова
+; @out   ф: слово — 1: слово — имя [A-Za-z_][A-Za-z0-9_]* (SPEC/
+; @out   L2-UASM.txt, раздел 3); 0: не имя (в том числе пустое)
+; @does  Проверяет слово как имя: первый байт — namefirst, остальные —
+; @does  namestep до конца (is_name эталона tools/uasm_lex.py, только
+; @does  ASCII, регистр значим); кирпич lexmark.
+; @depends np, nn, namefirst, namestep, LTU, not, LOAD8, EQ, ADD, ROT,
+; @depends SWAP, OVER, DROP, STORE64, LOAD64, IF, ELSE, THEN, EXIT
+: isname
+  DUP 0 EQ IF DROP DROP 0 EXIT THEN
+  OVER LOAD8 namefirst not IF DROP DROP 0 EXIT THEN
+  OVER OVER ADD nn STORE64
+  OVER 1 ADD ROT DROP SWAP DROP np STORE64
+  BEGIN namestep UNTIL
+  np LOAD64 nn LOAD64 EQ IF 1 ELSE 0 THEN ;
+
+; @method streval ( c -- v 1 | 0 )
+; @in    c: слово — байт 0..255
+; @out   pair: v и флаг 1 — код escape-символа; либо 0 без флага — c не
+; @out   escape строкового литерала
+; @does  Таблица escape строкового литерала (SPEC/L2-UASM.txt, раздел 4,
+; @does  STR_ESCAPES эталона): \n 10, \r 13, \t 9, \\ 92, \" 34, \0 0;
+; @does  кирпич strstep.
+; @depends EQ, DUP, DROP, ADD, IF, EXIT, THEN
+: streval
+  DUP 110 EQ IF DROP 10 1 EXIT THEN
+  DUP 114 EQ IF DROP 13 1 EXIT THEN
+  DUP 116 EQ IF DROP 9 1 EXIT THEN
+  DUP 92 EQ IF DROP 92 1 EXIT THEN
+  DUP 34 EQ IF DROP 34 1 EXIT THEN
+  48 EQ IF 0 1 EXIT THEN
+  0 ;
+
+; @method strstep ( -- done )
+; @in    нет (клетки sp, se, sl, sf — состояние скана)
+; @out   done: слово — 0: байт декодирован, скан продолжается; 1: скан
+; @out   окончен (успех либо ошибка — различает sf)
+; @does  Один шаг скана строкового литерала "..." (SPEC/L2-UASM.txt,
+; @does  раздел 4, parse_string эталона): закрывающая кавычка 34
+; @does  обязана быть последним байтом — иначе sf; обратный слэш 92
+; @does  требует валидный байт из streval — один декодированный байт;
+; @does  прочие байты (в том числе многобайтовый UTF-8) идут дословно,
+; @does  по одному декодированному байту каждый; конец диапазона до
+; @does  закрывающей кавычки и обрыв escape — sf.
+; @depends sp, se, sl, sf, LTU, not, LOAD8, streval, EQ, ADD, STORE64,
+; @depends LOAD64, DUP, DROP, IF, ELSE, THEN, EXIT
+: strstep
+  sp LOAD64 se LOAD64 LTU not
+  IF 1 sf STORE64 1 EXIT THEN
+  sp LOAD64 LOAD8 DUP 34 EQ
+  IF
+    DROP
+    sp LOAD64 1 ADD se LOAD64 EQ
+    IF 1 ELSE 1 sf STORE64 1 THEN
+  ELSE
+    DUP 92 EQ
+    IF
+      DROP
+      sp LOAD64 1 ADD se LOAD64 LTU not
+      IF 1 sf STORE64 1 EXIT THEN
+      sp LOAD64 1 ADD LOAD8 streval
+      not IF 1 sf STORE64 1 EXIT THEN
+      DROP
+      sl LOAD64 1 ADD sl STORE64
+      sp LOAD64 2 ADD sp STORE64
+      0
+    ELSE
+      DROP
+      sl LOAD64 1 ADD sl STORE64
+      sp LOAD64 1 ADD sp STORE64
+      0
+    THEN
+  THEN ;
+
+; @method parsestr ( a l -- kind )
+; @in    a: слово — адрес первого байта остатка строки (после DS/DZ)
+; @in    l: слово — число байтов остатка
+; @out   kind: слово — 1: остаток — строковый литерал, sl — длина
+; @out   декодированных байтов (DZ добавит байт 0 при кодировании,
+; @out   подшаг 6); 0: не литерал (нет кавычек, не закрыт, мусор после
+; @out   закрывающей, неизвестный escape)
+; @does  Скан строкового литерала DS/DZ (SPEC/L2-UASM.txt, разделы 4
+; @does  и 6, parse_string эталона): открывающая кавычка 34 — первый
+; @does  байт, минимум два байта, дальше strstep до конца; кирпич
+; @does  dsline главного файла.
+; @depends sp, se, sl, sf, strstep, LTU, not, LOAD8, EQ, ADD, ROT, SWAP,
+; @depends OVER, DROP, STORE64, LOAD64, IF, ELSE, THEN, EXIT
+: parsestr
+  DUP 2 LTU IF DROP DROP 0 EXIT THEN
+  OVER LOAD8 34 EQ not IF DROP DROP 0 EXIT THEN
+  OVER OVER ADD se STORE64
+  OVER 1 ADD ROT DROP SWAP DROP sp STORE64
+  0 sl STORE64
+  0 sf STORE64
+  BEGIN strstep UNTIL
+  sf LOAD64 0 EQ IF 1 ELSE 0 THEN ;
