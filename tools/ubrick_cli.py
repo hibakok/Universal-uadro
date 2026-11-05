@@ -2,7 +2,8 @@
 # @file    tools/ubrick_cli.py
 # @layer   T0
 # @branch  t0.ubrick.cli
-# @desc    Командный режим uBrick: compile — чтение исходника, разбор,
+# @desc    Командный режим uBrick: compile — чтение исходника, склейка
+# @desc    use-включений (загрузчик t0.ubrick.source, v0.3), разбор,
 # @desc    сборка образа UVM и запись результата; --asm сохраняет
 # @desc    промежуточный текст uAsm (SPEC/L3-UBRICK.txt, раздел 9).
 
@@ -14,12 +15,13 @@
         [--asm ТЕКСТ.uasm]
 
 Кирпичи: parse_args разбирает аргументы режима (parse_compile_args),
-read_text читает исходник, write_bytes/write_text пишут результат,
-write_asm_text сохраняет промежуточный текст uAsm флага --asm,
-run_compile исполняет режим, main диспетчеризует. Разбор — ветвь
-t0.ubrick.parse (parse_ubrk), сборка — ветвь t0.ubrick.build
+read_text читает исходник, resolve_uses склеивает use-включения
+(v0.3, ветвь t0.ubrick.source), write_bytes/write_text пишут
+результат, write_asm_text сохраняет промежуточный текст uAsm флага
+--asm, run_compile исполняет режим, main диспетчеризует. Разбор —
+ветвь t0.ubrick.parse (parse_ubrk), сборка — ветвь t0.ubrick.build
 (build_ubrk, build_text). Ошибки — код выхода 2 и сообщение
-в stderr; успех — код 0.
+в stderr (включая ошибки загрузчика); успех — код 0.
 """
 
 import os
@@ -33,6 +35,7 @@ if not __package__:
 
 from tools.ubrick_build import build_text, build_ubrk
 from tools.ubrick_parse import parse_ubrk
+from tools.ubrick_source import resolve_uses
 
 USAGE_CODE = 2        # код выхода: неверные аргументы или файлы
 ASM_FLAG = "--asm"    # флаг сохранения промежуточного текста uAsm
@@ -45,7 +48,7 @@ ASM_FLAG = "--asm"    # флаг сохранения промежуточног
 # @does  ошибке аргументов (SPEC/L3-UBRICK.txt, раздел 9).
 def usage_text():
     return ("использование: python tools/ubrick_cli.py compile "
-            "ИСТОЧНИК.ubrk ОБРАЗ.uvm [--asm ТЕКСТ.uasm]")
+            "ИСТОЧНИК.ubrk ОБРАЗ.uvm [--asm ТЕКСТ.uasm")
 
 
 # @method parse_compile_args(rest) -> tuple
@@ -140,14 +143,16 @@ def write_asm_text(records, path):
 # @in    parsed: tuple — ("compile", источник, образ, текст либо None)
 # @in    из parse_args
 # @out   code: int — 0 — образ собран и записан; 2 — ошибка
-# @does  Режим compile: читает исходник (read_text), разбирает
-# @does  (parse_ubrk), собирает образ (build_ubrk) и пишет его
-# @does  (write_bytes); с флагом --asm дополнительно сохраняет
-# @does  промежуточный текст uAsm (write_asm_text); ошибка разбора
-# @does  или сборки печатается в stderr как есть («uBrick: строка N:
-# @does  текст» / «uAsm: строка N: текст»), ошибки файлов — своим
-# @does  сообщением; код ошибки — 2 (SPEC, раздел 9).
-# @depends read_text, parse_ubrk, build_ubrk, write_bytes, write_asm_text
+# @does  Режим compile: читает исходник (read_text), склеивает
+# @does  use-включения (resolve_uses, v0.3), разбирает (parse_ubrk),
+# @does  собирает образ (build_ubrk) и пишет его (write_bytes);
+# @does  с флагом --asm дополнительно сохраняет промежуточный текст
+# @does  uAsm (write_asm_text); ошибка загрузчика, разбора или сборки
+# @does  печатается в stderr как есть («uBrick: строка N: текст» /
+# @does  «uAsm: строка N: текст»), ошибки файлов — своим сообщением;
+# @does  код ошибки — 2 (SPEC, разделы 8-9).
+# @depends read_text, resolve_uses, parse_ubrk, build_ubrk, write_bytes,
+# @depends write_asm_text
 # @uses   sys.stderr — стандартный вывод ошибок хоста
 def run_compile(parsed):
     _, src, dst, asm = parsed
@@ -155,7 +160,11 @@ def run_compile(parsed):
     if text is None:
         print(f"ошибка: не читается исходник: {src}", file=sys.stderr)
         return USAGE_CODE
-    records, error = parse_ubrk(text)
+    spliced, use_error = resolve_uses(src, text)
+    if use_error is not None:
+        print(use_error, file=sys.stderr)
+        return USAGE_CODE
+    records, error = parse_ubrk(spliced)
     if error is not None:
         print(error, file=sys.stderr)
         return USAGE_CODE
