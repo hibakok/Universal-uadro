@@ -1,0 +1,77 @@
+КАРТОЧКИ ФАЙЛА tests/test_ubrick_integration.py
+
+Ветвь: t0.ubrick.integration
+Слой: T0
+Методов: 10
+Генерируется tools/registry_scan.py; вручную не редактировать.
+Описание: Интеграционные программы Этапа 3: исходники src/*.ubrk
+          собираются командой ubrick_cli compile и исполняются uvm_cli;
+          поведение — как у эталонов Этапов 1-2 (SPEC/L3-UBRICK.txt,
+          ROADMAP.txt Этап 3).
+
+МЕТОД repo_root() -> str
+  вход:        нет
+  выход:       root: str — корень репозитория (каталог над tests)
+  функция:     Даёт корень репозитория для путей src/ и запуска
+               инструментов настоящим процессом в TestProcess.
+
+МЕТОД src_path(name) -> str
+  вход:        name: str — имя исходника в src/, например "hello.ubrk"
+  выход:       path: str — путь к исходнику слоя L3
+  функция:     Строит путь к программе .ubrk из каталога src/.
+
+МЕТОД cli_image(name) -> bytes
+  вход:        name: str — имя исходника в src/, например "hello.ubrk"
+  выход:       image: bytes — образ, собранный командой compile; None —
+               ошибка
+  функция:     Собирает src/NAME настоящей командой ubrick_cli (режим
+               compile, временный файл образа) и возвращает байты файла;
+               при ошибке сборки команда сама печатает сообщение в
+               stderr.
+  использует:  sys.stderr — стандартный вывод ошибок хоста (через cli)
+  зависимости: ubrick_cli.main
+
+МЕТОД test_compile_success() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Команда compile собирает исходник с text-данными в образ
+               (не None): разбор, сборка и ассемблирование прошли.
+
+МЕТОД test_uvm_cli_outputs_hi() -> None
+  вход:        нет
+  выход:       нет
+  функция:     uvm_cli: код 0, в stdout — "Hi" (поведение эталона
+               src/hello.uasm Этапа 2).
+
+МЕТОД test_run_image_stack_is_20() -> None
+  вход:        нет
+  выход:       нет
+  функция:     run_image: код 0, на стеке данных — 20 (поведение эталона
+               src/arith.uasm Этапа 2: результат остаётся в машине).
+
+МЕТОД test_uvm_cli_silent_zero() -> None
+  вход:        нет
+  выход:       нет
+  функция:     uvm_cli: код 0, вывода нет — результат остаётся в машине.
+
+МЕТОД test_run_image_semantics() -> None
+  вход:        нет
+  выход:       нет
+  функция:     run_image: код 0, вывод "!", стек [111, 222], RS пуст —
+               var-ячейки прочитаны, цикл BEGIN/UNTIL завершён, оба
+               вложенных вызова вернулись (поведение эталона
+               src/nested_calls.uasm Этапа 2).
+
+МЕТОД test_uvm_cli_outputs_marker() -> None
+  вход:        нет
+  выход:       нет
+  функция:     uvm_cli: код 0, в stdout — "!" (маркер после возвратов и
+               цикла).
+
+МЕТОД test_process_compile_and_run() -> None
+  вход:        нет
+  выход:       нет
+  функция:     python tools/ubrick_cli.py compile src/hello.ubrk
+               ОБРАЗ.uvm, затем python tools/uvm_cli.py ОБРАЗ.uvm: оба
+               процесса завершаются кодом 0, stdout второго — "Hi"
+               (команды раздела 9 SPEC/L3-UBRICK.txt).
