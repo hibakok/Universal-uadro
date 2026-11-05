@@ -2,22 +2,31 @@
 # @file    tests/test_l2_disasm.py
 # @layer   T0
 # @branch  l2.uasm.disasm
-# @desc    Тесты подшага 1 ветви l2.uasm.disasm: каркас и таблица мнемоник
+# @desc    Тесты подшагов 1-2 ветви l2.uasm.disasm: каркас, таблица
+# @desc    мнемоник, поле imm64 и печать десятичного значения
 # @desc    (src/l2/disasm.ubrk): сборка настоящей командой compile, пустой
-# @desc    вход, все опкоды без imm64 — по строке на мнемонику, границы
-# @desc    диапазонов и дыры таблицы — останов с кодом 0.
+# @desc    вход, опкоды без imm64 — по строке на мнемонику, инструкции
+# @desc    с imm64 — золотая сверка с эталоном disasm байт в байт,
+# @desc    обрыв поля imm64 — останов с кодом 0, сквозной прогон
+# @desc    настоящими процессами.
 
-"""Тесты подшага 1 ветви l2.uasm.disasm (SPEC/L4-SELFHOST.txt, раздел 7).
+"""Тесты подшагов 1-2 ветви l2.uasm.disasm (SPEC/L4-SELFHOST.txt, раздел 7).
 
-Каркас дизассемблера на uBrick (src/l2/disasm.ubrk) собирается настоящей
-командой ubrick_cli compile (кирпич l2_image) и исполняется кирпичом
-run_with_io (tests/uvm_testkit.py): SYS 0 читает байты образа-входа,
-SYS 1 пишет текст uAsm.
+Дизассемблер на uBrick (src/l2/disasm.ubrk) собирается настоящей командой
+ubrick_cli compile (кирпич l2_image) и исполняется кирпичом run_with_io
+(tests/uvm_testkit.py): SYS 0 читает байты образа-входа, SYS 1 пишет текст
+uAsm.
 
-Поведение подшага 1: пустой вход — пустой вывод и код 0; байт известного
-опкода без imm64 — строка «МНЕМОНИКА»; неизвестный код (дыра диапазона
-или за таблицей) — останов декодирования, код 0. Значения imm64 и хвост
-DB — следующие подшаги ветви, их входы здесь не проверяются.
+Подшаг 1: пустой вход — пустой вывод и код 0; байт известного опкода без
+imm64 — строка «МНЕМОНИКА»; неизвестный код — останов декодирования,
+код 0.
+
+Подшаг 2: опкод с полем imm64 читает восемь байтов поля (hasimm,
+getimm); полное поле — строка «МНЕМОНИКА значение», сверенная с эталоном
+disasm байт в байт (золотые значения 0, 1, 12345, 2^64-1); обрыв поля
+(0-7 байтов) — останов с кодом 0, строка не печатается: хвост DB —
+подшаг 3, поэтому выходы с обрывом и неизвестными кодами эталону
+не равны и сверяются по контракту подшага.
 """
 
 import os
@@ -28,11 +37,14 @@ import unittest
 
 from tests import uvm_testkit as tk
 from tools import ubrick_cli
+from tools.uasm_disasm import disasm as ref_disasm
 from tools.uvm_table import TABLE
 
 NOIMM = [rec for rec in TABLE if not rec[3]]   # опкоды без поля imm64
+IMM = [rec for rec in TABLE if rec[3]]         # опкоды с полем imm64
 HOLES = (0x08, 0x0F, 0x14, 0x1F, 0x2D, 0x2F,   # дыры между диапазонами
          0x36, 0x3F, 0x46, 0x4F, 0x51, 0xFF)   # и за таблицей
+VALUES = (0, 1, 12345, 2 ** 64 - 1)            # золотые значения imm64
 
 
 # @method repo_root() -> str
@@ -98,7 +110,7 @@ class TestCompile(unittest.TestCase):
 
 
 class TestSkeleton(unittest.TestCase):
-    """Поведение подшага 1: EOF, известные опкоды, останов на дырах."""
+    """Подшаг 1: EOF, опкоды без imm64, останов на дырах таблицы."""
 
     # @method test_empty_input() -> None
     # @in    нет
@@ -126,18 +138,16 @@ class TestSkeleton(unittest.TestCase):
     # @method test_range_bounds() -> None
     # @in    нет
     # @out   нет
-    # @does  Низ и верх каждого диапазона таблицы отдельным байтом:
-    # @does  адрес записи = база строки + (код - низ) * 8 на краях строк.
+    # @does  Низ и верх каждого диапазона таблицы отдельным байтом
+    # @does  без imm64: адрес записи = база строки + (код - низ) * 8
+    # @does  на краях строк (границы imm-опкодов — TestImm.test_imm_bounds).
     # @depends l2_image, feed
     def test_range_bounds(self):
         image = l2_image()
         pairs = (
-            (0x00, "NOP"), (0x07, "PICK"),
-            (0x10, "LOAD8"), (0x13, "STORE64"),
-            (0x20, "ADD"), (0x2C, "INV"),
-            (0x30, "EQ"), (0x35, "GEU"),
-            (0x40, "JMP"), (0x45, "HALT"),
-            (0x50, "SYS"),
+            (0x00, "NOP"), (0x10, "LOAD8"), (0x13, "STORE64"),
+            (0x20, "ADD"), (0x2C, "INV"), (0x30, "EQ"),
+            (0x35, "GEU"), (0x44, "RET"),
         )
         for opcode, mnemonic in pairs:
             code, out = feed(image, bytes([opcode]))
@@ -166,6 +176,80 @@ class TestSkeleton(unittest.TestCase):
         self.assertEqual((code, out), (0, b"NOP\nNOP\n"))
 
 
+class TestImm(unittest.TestCase):
+    """Подшаг 2: инструкции с imm64 — «МНЕМОНИКА значение» (десятичное)."""
+
+    # @method test_imm_bounds() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Границы imm-опкодов (PICK, JMP, CALL, HALT, SYS) с полным
+    # @does  полем — золотая сверка строки с эталоном disasm байт в байт.
+    # @depends l2_image, feed, ref_disasm
+    def test_imm_bounds(self):
+        image = l2_image()
+        pairs = (
+            (0x01, 5), (0x07, 1), (0x40, 0),
+            (0x43, 64), (0x45, 16), (0x50, 1),
+        )
+        for opcode, value in pairs:
+            data = bytes([opcode]) + tk.imm64(value)
+            code, out = feed(image, data)
+            self.assertEqual((code, out), (0, ref_disasm(data).encode()))
+
+    # @method test_imm_values() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Каждый imm-опкод с каждым золотым значением (0, 1, 12345,
+    # @does  2^64-1) — вывод равен эталону disasm байт в байт, код 0
+    # @does  (SPEC/L4-SELFHOST.txt, раздел 6: золотой набор).
+    # @depends l2_image, feed, ref_disasm
+    def test_imm_values(self):
+        image = l2_image()
+        for rec in IMM:
+            for value in VALUES:
+                data = bytes([rec[0]]) + tk.imm64(value)
+                code, out = feed(image, data)
+                self.assertEqual(code, 0)
+                self.assertEqual(out, ref_disasm(data).encode())
+
+    # @method test_imm_cut_stops() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Обрыв поля imm64 (0-7 байтов после опкода) — останов
+    # @does  декодирования: строка не печатается, вывод пуст, код 0;
+    # @does  хвост DB — подшаг 3 (SPEC/L4-SELFHOST.txt, раздел 6).
+    # @depends l2_image, feed
+    def test_imm_cut_stops(self):
+        image = l2_image()
+        for rec in IMM:
+            for count in range(8):
+                data = bytes([rec[0]]) + b"\x39" * count
+                code, out = feed(image, data)
+                self.assertEqual((code, out), (0, b""))
+
+    # @method test_imm_cut_keeps_prefix() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Обрыв поля после напечатанных инструкций сохраняет строки
+    # @does  префикса: NOP напечатан, PUSH без полного поля — останов.
+    # @depends l2_image, feed
+    def test_imm_cut_keeps_prefix(self):
+        code, out = feed(l2_image(), b"\x00\x01\x39\x30\x00\x13")
+        self.assertEqual((code, out), (0, b"NOP\n"))
+
+    # @method test_mixed_stream() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Смешанный поток инструкций обоих видов — золотая сверка
+    # @does  всего вывода с эталоном disasm байт в байт (SPEC, раздел 6).
+    # @depends l2_image, feed, ref_disasm
+    def test_mixed_stream(self):
+        data = (b"\x00" + b"\x01" + tk.imm64(12345) + b"\x13"
+                + b"\x45" + tk.imm64(1))
+        code, out = feed(l2_image(), data)
+        self.assertEqual((code, out), (0, ref_disasm(data).encode()))
+
+
 class TestProcess(unittest.TestCase):
     """Сквозной прогон настоящим процессом (SPEC, раздел 5): uvm_cli."""
 
@@ -173,8 +257,8 @@ class TestProcess(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Команды контракта настоящими процессами: ubrick_cli compile,
-    # @does  затем uvm_cli с входным файлом; вывод — ожидаемые строки,
-    # @does  код процесса 0.
+    # @does  затем uvm_cli с входным файлом из инструкций обоих видов;
+    # @does  вывод — ожидаемые строки, код процесса 0.
     # @depends l2_source
     # @uses   subprocess — запуск инструментов настоящими процессами
     def test_process_run(self):
@@ -182,7 +266,8 @@ class TestProcess(unittest.TestCase):
             image = os.path.join(tmp, "disasm.uvm")
             src = os.path.join(tmp, "in.uvm")
             with open(src, "wb") as handle:
-                handle.write(b"\x00\x10\x13\x2c\x50")
+                handle.write(b"\x00" + b"\x01" + (12345).to_bytes(8, "little")
+                             + b"\x13" + b"\x45" + (0).to_bytes(8, "little"))
             compile_code = subprocess.call(
                 [sys_python(), tools_path("ubrick_cli.py"), "compile",
                  l2_source(), image],
@@ -193,7 +278,8 @@ class TestProcess(unittest.TestCase):
                     [sys_python(), tools_path("uvm_cli.py"), image],
                     stdin=handle, capture_output=True)
             self.assertEqual(run.returncode, 0)
-            self.assertEqual(run.stdout, b"NOP\nLOAD8\nSTORE64\nINV\nSYS\n")
+            self.assertEqual(
+                run.stdout, b"NOP\nPUSH 12345\nSTORE64\nHALT 0\n")
 
 
 # @method sys_python() -> str
