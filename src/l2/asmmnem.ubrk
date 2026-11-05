@@ -1,0 +1,153 @@
+; @uadro
+; @file    src/l2/asmmnem.ubrk
+; @layer   L2
+; @branch  l2.uasm.assemble
+; @desc    Ассемблер uAsm — таблица мнемоник и поиск кода по мнемонике:
+; @desc    use-включение главного файла src/l2/assemble.ubrk
+; @desc    (SPEC/L4-SELFHOST.txt, раздел 5А, подшаг 2). Шесть text-строк
+; @desc    по диапазонам кодов — те же, что у дизассемблера l2.uasm.disasm
+; @desc    (SPEC/L4-SELFHOST.txt, раздел 5); запись — восемь байтов:
+; @desc    мнемоника, дополненная нулями; слово mnem ищет код первого
+; @desc    слова строки сравнением с записями строк: код = низ диапазона
+; @desc    + номер записи.
+
+; Таблицы мнемоник (SPEC/L4-SELFHOST.txt, раздел 5А): шесть строк по
+; диапазонам кодов; запись кода c строки с базой B и низом L — по адресу
+; B + (c - L) * 8; байты за записью при сравнении не читаются.
+
+; @method tstm ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x00-0x07 (стек)
+; @does  Данные: восемь записей по восемь байтов (NOP PUSH DROP DUP SWAP
+; @does  OVER ROT PICK); запись кода c — по адресу tstm + c * 8.
+text tstm "NOP\0\0\0\0\0PUSH\0\0\0\0DROP\0\0\0\0DUP\0\0\0\0\0SWAP\0\0\0\0OVER\0\0\0\0ROT\0\0\0\0\0PICK\0\0\0\0"
+
+; @method tmem ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x10-0x13 (память)
+; @does  Данные: четыре записи по восемь байтов (LOAD8 LOAD64 STORE8
+; @does  STORE64); запись кода c — по адресу tmem + (c - 0x10) * 8.
+text tmem "LOAD8\0\0\0LOAD64\0\0STORE8\0\0STORE64\0"
+
+; @method tari ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x20-0x2C
+; @out   (арифметика)
+; @does  Данные: тринадцать записей по восемь байтов (ADD SUB MUL UDIV
+; @does  UMOD NEG SHL SHR SAR AND OR XOR INV); запись кода c — по адресу
+; @does  tari + (c - 0x20) * 8.
+text tari "ADD\0\0\0\0\0SUB\0\0\0\0\0MUL\0\0\0\0\0UDIV\0\0\0\0UMOD\0\0\0\0NEG\0\0\0\0\0SHL\0\0\0\0\0SHR\0\0\0\0\0SAR\0\0\0\0\0AND\0\0\0\0\0OR\0\0\0\0\0\0XOR\0\0\0\0\0INV\0\0\0\0\0"
+
+; @method tcmp ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x30-0x35
+; @out   (сравнения)
+; @does  Данные: шесть записей по восемь байтов (EQ NEQ LTU GTU LEU GEU);
+; @does  запись кода c — по адресу tcmp + (c - 0x30) * 8.
+text tcmp "EQ\0\0\0\0\0\0NEQ\0\0\0\0\0LTU\0\0\0\0\0GTU\0\0\0\0\0LEU\0\0\0\0\0GEU\0\0\0\0\0"
+
+; @method tjmp ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x40-0x45
+; @out   (переходы)
+; @does  Данные: шесть записей по восемь байтов (JMP JZ JNZ CALL RET
+; @does  HALT); запись кода c — по адресу tjmp + (c - 0x40) * 8.
+text tjmp "JMP\0\0\0\0\0JZ\0\0\0\0\0\0JNZ\0\0\0\0\0CALL\0\0\0\0RET\0\0\0\0\0HALT\0\0\0\0"
+
+; @method tsys ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки таблицы мнемоник 0x50 (система)
+; @does  Данные: одна запись — восемь байтов (SYS); запись кода 0x50 —
+; @does  по адресу tsys.
+text tsys "SYS\0\0\0\0\0"
+
+; Клетки сравнения мнемоник: mi — индекс байта сравнения 0..8, ri —
+; индекс записи в диапазоне, rb — база строки таблицы, rlow — низ
+; диапазона кодов, rcount — число записей диапазона.
+var mi
+var ri
+var rb
+var rlow
+var rcount
+
+; @method mstep ( -- done )
+; @in    нет (клетки mi, ri, rb — состояние сравнения; wa, wl — слово)
+; @out   done: слово — 0: байты равны, mi движется; 1: расхождение байтов
+; @out   либо все восемь позиций записи сравнены
+; @does  Один шаг сравнения слова wa/wl с записью ri строки rb: байт
+; @does  слова (mi < wl — байт по адресу wa + mi, иначе 0) сравнивается
+; @does  с байтом записи rb + ri * 8 + mi; расхождение — стоп (mi < 8
+; @does  означает несовпадение); читаются только восемь байтов записи.
+; @depends mi, ri, rb, wa, wl, GEU, LTU, EQ, NEQ, ADD, MUL, LOAD8
+: mstep
+  mi LOAD64 8 GEU IF 1 EXIT THEN
+  mi LOAD64 wl LOAD64 LTU
+  IF wa LOAD64 mi LOAD64 ADD LOAD8 ELSE 0 THEN
+  rb LOAD64 ri LOAD64 8 MUL ADD mi LOAD64 ADD LOAD8
+  NEQ IF 1 EXIT THEN
+  mi LOAD64 1 ADD mi STORE64 0 ;
+
+; @method entrymatch ( -- ф )
+; @in    нет (клетки ri, rb — запись диапазона; wa, wl — слово)
+; @out   ф: слово — 1: слово совпало с записью ri (все восемь позиций
+; @out   сравнены и длина слова не больше восьми); 0: иначе
+; @does  Сравнивает слово wa/wl с записью ri диапазона rb (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А: сравнение слова исходника
+; @does  с записями строк): mstep от mi = 0; слово длиннее восьми
+; @does  байтов совпадать не может — ни одна мнемоника не длиннее
+; @does  семи, запись с нулевым байтом слову не равна.
+; @depends mi, ri, rb, wa, wl, mstep, EQ, LEU, AND
+: entrymatch
+  0 mi STORE64
+  BEGIN mstep UNTIL
+  mi LOAD64 8 EQ wl LOAD64 8 LEU AND ;
+
+; @method rstep ( -- done )
+; @in    нет (клетки rb, rcount, ri — состояние сканирования диапазона)
+; @out   done: слово — 0: запись ri не совпала, ri движется; 1: совпало
+; @out   (ri — номер записи) либо диапазон исчерпан
+; @does  Один шаг сканирования диапазона таблицы: entrymatch проверяет
+; @does  запись ri; совпадение — стоп, иначе ri + 1; ri = rcount — стоп
+; @does  без совпадения; кирпич rangematch.
+; @depends ri, rcount, entrymatch, LTU, not
+: rstep
+  ri LOAD64 rcount LOAD64 LTU not IF 1 EXIT THEN
+  entrymatch IF 1 EXIT THEN
+  ri LOAD64 1 ADD ri STORE64 0 ;
+
+; @method rangematch ( base low count -- code 1 | 0 )
+; @in    base: слово — адрес первой записи строки таблицы
+; @in    low: слово — низ диапазона кодов строки
+; @in    count: слово — число записей строки
+; @out   pair: code и 1 — слово совпало с записью, code = low + номер
+; @out   записи; либо 0 — в строке совпадения нет
+; @does  Сканирует строку таблицы мнемоник (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А: код = низ диапазона + номер записи): rstep, пока
+; @does  не найдёт запись либо не исчерпает диапазон.
+; @depends rb, rlow, rcount, ri, rstep, LTU, ADD
+: rangematch
+  rcount STORE64 rlow STORE64 rb STORE64
+  0 ri STORE64
+  BEGIN rstep UNTIL
+  ri LOAD64 rcount LOAD64 LTU
+  IF rlow LOAD64 ri LOAD64 ADD 1 ELSE 0 THEN ;
+
+; @method mnem ( -- code 1 | 0 )
+; @in    нет (клетки wa, wl — первое слово строки)
+; @out   pair: code и 1 — слово — мнемоника опкода, code — её код; либо
+; @out   0 — слово не мнемоника (метка, директива, имя, мусор)
+; @does  Поиск кода по мнемонике (SPEC/L4-SELFHOST.txt, раздел 5А):
+; @does  шесть строк таблицы по диапазонам — 0x00-0x07 (tstm),
+; @does  0x10-0x13 (tmem), 0x20-0x2C (tari), 0x30-0x35 (tcmp),
+; @does  0x40-0x45 (tjmp), 0x50 (tsys); директивы DB/DW/DS/DZ — не
+; @does  опкоды, их разбирает запись строки (подшаг 4); кирпич listline
+; @does  и разбора строки в запись.
+; @depends tstm, tmem, tari, tcmp, tjmp, tsys, rangematch, DUP, IF
+: mnem
+  tstm 0x00 8 rangematch DUP IF EXIT THEN DROP
+  tmem 0x10 4 rangematch DUP IF EXIT THEN DROP
+  tari 0x20 13 rangematch DUP IF EXIT THEN DROP
+  tcmp 0x30 6 rangematch DUP IF EXIT THEN DROP
+  tjmp 0x40 6 rangematch DUP IF EXIT THEN DROP
+  tsys 0x50 1 rangematch DUP IF EXIT THEN DROP
+  0 ;
