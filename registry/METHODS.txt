@@ -3,6 +3,27 @@
 Индекс генерируется tools/registry_scan.py; вручную не редактировать.
 Карточки методов исходного файла — registry/<ветвь>/<файл>.txt.
 
+ВЕТВЬ no-branch [слой ?] — методов: 0
+
+- src/arith.uasm — методов: 0
+  карточки: registry/no-branch/arith.txt
+  описание: без описания
+- src/hello.uasm — методов: 0
+  карточки: registry/no-branch/hello.txt
+  описание: без описания
+- src/nested_calls.uasm — методов: 0
+  карточки: registry/no-branch/nested_calls.txt
+  описание: без описания
+- src/arith.ubrk — методов: 0
+  карточки: registry/no-branch/arith_2.txt
+  описание: без описания
+- src/hello.ubrk — методов: 0
+  карточки: registry/no-branch/hello_2.txt
+  описание: без описания
+- src/nested_calls.ubrk — методов: 0
+  карточки: registry/no-branch/nested_calls_2.txt
+  описание: без описания
+
 ВЕТВЬ t0.infra.registry [слой T0] — методов: 62
 
 - tools/check_limits.py — методов: 3
