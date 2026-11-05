@@ -1,0 +1,313 @@
+; @uadro
+; @file    src/l2/asmsym.ubrk
+; @layer   L2
+; @branch  l2.uasm.assemble
+; @desc    Ассемблер uAsm — таблица символов: use-включение главного
+; @desc    файла src/l2/assemble.ubrk (SPEC/L4-SELFHOST.txt, раздел 5А,
+; @desc    подшаг 5). Собственное воплощение эталона tools/uasm_symbols.py:
+; @desc    единое пространство имён меток и констант. Хранилище — записи
+; @desc    «значение 8 байтов LE + имя + байт 0» подряд с адреса 0xA0000
+; @desc    (раскладка asmmem.ubrk), курсор sc — конец занятой области.
+; @desc    Определение symdef ищет имя прежде записи: повторное — «повторное
+; @desc    определение имени X»; имя длиннее 63 байтов — «слишком длинное
+; @desc    имя»; запись за предел 0xF0000 — «таблица символов переполнена»
+; @desc    (SPEC/L4-SELFHOST.txt, раздел 5А). Поиск сравнивает кандидата
+; @desc    с именами записей: кандидат за концом дополняется нулём, имя
+; @desc    записи завершено нулём — совпадение, когда равны все l+1
+; @desc    позиции (симметрия с mstep/entrymatch asmmnem.ubrk). Чтение
+; @desc    слова LE — loadle: кирпич листинга символов главного файла
+; @desc    (подшаг 5) и кодирования (подшаг 6).
+
+; Клетки таблицы символов: sc — курсор (адрес за последней записью),
+; ka/kl — кандидат поиска и определения (адрес и длина имени), kr — адрес
+; текущей записи скана, ki — индекс байта сравнения, zn — позиция скана
+; завершающего нуля имени записи.
+var sc
+var ka
+var kl
+var kr
+var ki
+var zn
+
+; Клетки записи слова LE (wword): wv — значение, wp — адрес следующего
+; байта, wi — индекс байта 0..8.
+var wv
+var wp
+var wi
+
+; Клетки копирования имени (symcopy): na — позиция источника, ne — предел
+; источника, nd — позиция приёмника.
+var na
+var ne
+var nd
+
+; Клетки чтения слова LE (loadle): la — адрес следующего байта, li —
+; индекс байта 0..8, lv — накопленное значение.
+var la
+var li
+var lv
+
+; @method tdup ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «повторное определение имени »
+; @out   (UTF-8 + 0)
+; @does  Данные: текст ошибки повторного определения с местом для X
+; @does  в конце (SPEC/L2-UASM.txt, раздел 7); печать — failx.
+text tdup "повторное определение имени "
+
+; @method tlong ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «слишком длинное имя» (UTF-8 + 0)
+; @does  Данные: текст ошибки ёмкости имени символа (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А: имя не длиннее 63 байтов); печать —
+; @does  fail.
+text tlong "слишком длинное имя"
+
+; @method tsymfull ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «таблица символов переполнена»
+; @out   (UTF-8 + 0)
+; @does  Данные: текст ошибки ёмкости таблицы символов (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А: 320 КиБ записей); печать — fail.
+text tsymfull "таблица символов переполнена"
+
+; @method symreset ( -- )
+; @in    нет
+; @out   нет; курсор sc — на начале таблицы (записей нет)
+; @does  Начальное состояние таблицы символов (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): sc = symbase; кирпич начала прохода 1 (p1addr
+; @does  главного файла).
+; @depends sc, symbase
+: symreset
+  symbase sc STORE64 ;
+
+; @method symcmpstep ( -- done )
+; @in    нет (клетки ka, kl, kr, ki — состояние сравнения)
+; @out   done: слово — 0: позиция ki совпала, сравнение продолжается;
+; @out   1: расхождение байтов либо сравнены все kl+1 позиций
+; @does  Один шаг сравнения имени-кандидата ka/kl с именем записи kr
+; @does  (SPEC/L4-SELFHOST.txt, раздел 5А): байт кандидата на позиции
+; @does  ki — из [ka, ka+kl), на позиции kl — ноль (имя записи завершено
+; @does  нулём, поэтому равенство всех kl+1 позиций — точное совпадение
+; @does  имён: более короткое имя записи даст не-нуль кандидата, более
+; @does  длинное — свой не-нуль); байт записи — по адресу kr + 8 + ki;
+; @does  расхождение — стоп.
+; @depends ka, kl, kr, ki, GTU, LTU, ADD, LOAD8, NEQ, STORE64
+: symcmpstep
+  ki LOAD64 kl LOAD64 GTU IF 1 EXIT THEN
+  ki LOAD64 kl LOAD64 LTU
+  IF ka LOAD64 ki LOAD64 ADD LOAD8 ELSE 0 THEN
+  kr LOAD64 ki LOAD64 ADD 8 ADD LOAD8
+  NEQ IF 1 EXIT THEN
+  ki LOAD64 1 ADD ki STORE64
+  0 ;
+
+; @method symrecmatch ( -- ф )
+; @in    нет (клетка kr — запись; ka, kl — кандидат)
+; @out   ф: слово — 1: имя записи kr равно кандидату ka/kl; 0: иначе
+; @does  Сравнивает кандидата с записью kr целиком (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А): symcmpstep от ki = 0; совпадение —
+; @does  ki достиг kl+1 (все позиции равны); кирпич symfstep.
+; @depends ka, kl, ki, symcmpstep, EQ, ADD
+: symrecmatch
+  0 ki STORE64
+  BEGIN symcmpstep UNTIL
+  ki LOAD64 kl LOAD64 1 ADD EQ ;
+
+; @method symzstep ( -- done )
+; @in    нет (клетка zn — позиция скана)
+; @out   done: слово — 0: байт не ноль, zn движется; 1: ноль — конец
+; @out   имени записи
+; @does  Один шаг поиска завершающего нуля имени записи (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А: имя записи завершено байтом 0);
+; @does  кирпич symnext.
+; @depends zn, LOAD8, EQ, ADD, STORE64
+: symzstep
+  zn LOAD64 LOAD8 0 EQ IF 1 EXIT THEN
+  zn LOAD64 1 ADD zn STORE64 0 ;
+
+; @method symnext ( -- )
+; @in    нет (клетка kr — адрес текущей записи)
+; @out   нет; kr — адрес записи, следующей за текущей
+; @does  Продвигает kr на следующую запись таблицы (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А): имя записи начинается на kr + 8
+; @does  и завершено нулём — zn сканирует его, следующая запись — за
+; @does  нулём; кирпичи symfstep и листинга символов главного файла.
+; @depends kr, zn, symzstep, ADD, STORE64
+: symnext
+  kr LOAD64 8 ADD zn STORE64
+  BEGIN symzstep UNTIL
+  zn LOAD64 1 ADD kr STORE64 ;
+
+; @method symfstep ( -- done )
+; @in    нет (клетки kr, sc, ka, kl — состояние скана)
+; @out   done: слово — 0: запись kr не совпала, скан продолжается; 1:
+; @out   совпадение (kr — запись) либо таблица исчерпана
+; @does  Один шаг скана таблицы (SPEC/L4-SELFHOST.txt, раздел 5А):
+; @does  kr >= sc — записей больше нет; symrecmatch сравнивает кандидата
+; @does  с записью kr; совпадение — стоп; иначе symnext; кирпич symfind.
+; @depends kr, sc, symrecmatch, symnext, GEU
+: symfstep
+  kr LOAD64 sc LOAD64 GEU IF 1 EXIT THEN
+  symrecmatch IF 1 EXIT THEN
+  symnext 0 ;
+
+; @method symfind ( a l -- r 1 | 0 )
+; @in    a: слово — адрес первого байта имени
+; @in    l: слово — число байтов имени
+; @out   pair: r и 1 — имя найдено, r — адрес записи (поля значения);
+; @out   либо 0 — имени в таблице нет
+; @does  Ищет имя в таблице символов (SPEC/L2-UASM.txt, разделы 3 и 7,
+; @does  symbol_get эталона): ka/kl — кандидат, kr идёт от symbase по
+; @does  записям до совпадения либо конца (sc); клетки ka/kl хранят
+; @does  кандидата и после выхода — их читает symappend; кирпичи symdef
+; @does  (проход 1) и разрешения имён (проход 2, подшаг 6).
+; @depends ka, kl, kr, sc, symbase, symfstep, LTU, IF, ELSE, THEN
+: symfind
+  kl STORE64 ka STORE64
+  symbase kr STORE64
+  BEGIN symfstep UNTIL
+  kr LOAD64 sc LOAD64 LTU
+  IF kr LOAD64 1 ELSE 0 THEN ;
+
+; @method symroom ( l -- )
+; @in    l: слово — длина имени определяемого символа
+; @out   нет; не возвращается при ошибке: запись l + 9 байтов не
+; @out   помещается в таблицу — «таблица символов переполнена», код 16
+; @does  Проверка ёмкости таблицы символов (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): запись занимает 8 (значение) + l (имя) + 1 (ноль)
+; @does  байтов; выход за symlimit — ошибка входа инструмента (fail);
+; @does  кирпич symappend.
+; @depends sc, symlimit, tsymfull, fail, ADD, GTU, IF, THEN
+: symroom
+  sc LOAD64 ADD 9 ADD symlimit GTU
+  IF tsymfull fail THEN ;
+
+; @method wwordstep ( -- done )
+; @in    нет (клетки wv, wp, wi — состояние записи)
+; @out   done: слово — 0: байт записан, запись продолжается; 1: восемь
+; @out   байтов записаны
+; @does  Один шаг записи слова little-endian (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А: значение записи — 8 байтов LE): байт wi —
+; @does  (wv >> 8*wi) AND 255 — пишется на wp, обе клетки растут;
+; @does  кирпич wword.
+; @depends wv, wp, wi, GEU, MUL, SHR, AND, STORE8, ADD, STORE64, LOAD64
+: wwordstep
+  wi LOAD64 8 GEU IF 1 EXIT THEN
+  wv LOAD64 wi LOAD64 8 MUL SHR 0xFF AND
+  wp LOAD64 STORE8
+  wp LOAD64 1 ADD wp STORE64
+  wi LOAD64 1 ADD wi STORE64
+  0 ;
+
+; @method wword ( v a -- a8 )
+; @in    v: слово — значение слова
+; @in    a: слово — адрес первого байта
+; @out   a8: слово — адрес за восьмым байтом (a + 8)
+; @does  Записывает слово восемью байтами little-endian с адреса a
+; @does  (SPEC/L4-SELFHOST.txt, раздел 5А): wwordstep от wi = 0; кирпич
+; @does  symappend (поле значения записи).
+; @depends wv, wp, wi, wwordstep
+: wword
+  wp STORE64 wv STORE64
+  0 wi STORE64
+  BEGIN wwordstep UNTIL
+  wp LOAD64 ;
+
+; @method symcstep ( -- done )
+; @in    нет (клетки na, ne, nd — состояние копирования)
+; @out   done: слово — 0: байт скопирован; 1: байтов имени больше нет
+; @does  Один шаг копирования имени в запись (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): байт с na на nd, обе позиции растут; кирпич
+; @does  symcopy.
+; @depends na, ne, nd, LTU, not, LOAD8, STORE8, ADD, STORE64, LOAD64
+: symcstep
+  na LOAD64 ne LOAD64 LTU not IF 1 EXIT THEN
+  na LOAD64 LOAD8 nd LOAD64 STORE8
+  na LOAD64 1 ADD na STORE64
+  nd LOAD64 1 ADD nd STORE64
+  0 ;
+
+; @method symcopy ( a l -- )
+; @in    a: слово — адрес первого байта имени
+; @in    l: слово — число байтов имени
+; @out   нет; имя — с адреса sc, за ним байт 0; курсор sc — за нулём
+; @does  Пишет имя записи и завершающий ноль (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А: имя + байт 0): na — позиция источника, ne — его
+; @does  предел (a + l), symcstep копирует [a, a+l) с адреса sc, ноль —
+; @does  на конец имени, курсор sc — за нулём; кирпич symappend.
+; @depends na, ne, nd, sc, symcstep, STORE8, ADD, STORE64, LOAD64
+: symcopy
+  ne STORE64 na STORE64
+  na LOAD64 ne LOAD64 ADD ne STORE64
+  sc LOAD64 nd STORE64
+  BEGIN symcstep UNTIL
+  0 nd LOAD64 STORE8
+  nd LOAD64 1 ADD sc STORE64 ;
+
+; @method symappend ( v -- )
+; @in    v: слово — значение символа (адрес либо константа, модуль 2^64)
+; @in    (клетки ka, kl — имя определяемого символа)
+; @out   нет; не возвращается при ошибке ёмкости; иначе запись —
+; @out   в таблице, курсор sc — за ней
+; @does  Дописывает запись символа в таблицу (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А: значение 8 байтов LE + имя + байт 0): имя длиннее
+; @does  63 байтов — «слишком длинное имя» (fail); запись не помещается
+; @does  до symlimit — «таблица символов переполнена» (symroom); wword
+; @does  пишет значение, symcopy — имя и ноль; кирпич symdef.
+; @depends ka, kl, sc, tlong, fail, symroom, wword, symcopy, GTU, LOAD64,
+; @depends STORE64, IF, THEN
+: symappend
+  kl LOAD64 63 GTU IF tlong fail THEN
+  kl LOAD64 symroom
+  sc LOAD64 wword sc STORE64
+  ka LOAD64 kl LOAD64 symcopy ;
+
+; @method symdef ( a l v -- )
+; @in    a: слово — адрес первого байта имени
+; @in    l: слово — число байтов имени
+; @in    v: слово — значение символа (метке — адрес записи, константе —
+; @in    значение литерала по модулю 2^64)
+; @out   нет; не возвращается при ошибке; иначе символ определён
+; @does  Определяет символ (SPEC/L2-UASM.txt, разделы 3 и 7, define_symbol
+; @does  и symbol_define эталона): symfind ищет имя — найдено — «повторное
+; @does  определение имени X» (X — имя, failx; прежнее значение
+; @does  сохраняется, как у эталона), не найдено — symappend дописывает
+; @does  запись; клетки ka/kl — имя для symappend; кирпич p1step
+; @does  главного файла (проход 1).
+; @depends ka, kl, symfind, tdup, failx, symappend, ROT, DROP, IF, THEN,
+; @depends LOAD64
+: symdef
+  ROT ROT
+  symfind
+  IF
+    DROP DROP
+    ka LOAD64 kl LOAD64 tdup failx
+  THEN
+  symappend ;
+
+; @method lwordstep ( -- done )
+; @in    нет (клетки la, li, lv — состояние чтения)
+; @out   done: слово — 0: байт прочитан; 1: восемь байтов прочитаны
+; @does  Один шаг чтения слова little-endian (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А: значение записи — 8 байтов LE): байт li добавляется
+; @does  в lv сдвигом на 8*li; кирпич loadle.
+; @depends la, li, lv, GEU, LOAD8, MUL, SHL, ADD, STORE64, LOAD64
+: lwordstep
+  li LOAD64 8 GEU IF 1 EXIT THEN
+  la LOAD64 LOAD8 li LOAD64 8 MUL SHL lv LOAD64 ADD lv STORE64
+  la LOAD64 1 ADD la STORE64
+  li LOAD64 1 ADD li STORE64
+  0 ;
+
+; @method loadle ( a -- v )
+; @in    a: слово — адрес первого байта слова
+; @out   v: слово — значение восьми байтов little-endian по адресу a
+; @does  Читает слово из записи таблицы символов (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): lwordstep от li = 0; кирпич листинга символов
+; @does  главного файла (подшаг 5) и кодирования (подшаг 6).
+; @depends la, li, lv, lwordstep
+: loadle
+  la STORE64 0 lv STORE64 0 li STORE64
+  BEGIN lwordstep UNTIL
+  lv LOAD64 ;
