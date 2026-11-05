@@ -2,7 +2,7 @@
 # @file    tests/test_ubrick_dict.py
 # @layer   T0
 # @branch  t0.ubrick.dict
-# @desc    Тесты словаря uBrick v0.1: примитивы, псевдонимы, производные
+# @desc    Тесты словаря uBrick v0.4: примитивы, псевдонимы, производные
 # @desc    слова, конструкции, поиск по имени и списки слов
 # @desc    (SPEC/L3-UBRICK.txt, разделы 4-5).
 
@@ -53,6 +53,7 @@ GOLDEN_ALIASES = (
     ("KEY", "SYS 0"),
     ("EXIT", "RET"),
     ("BYE", "HALT 0"),
+    ("QUIT", "HALT 16"),
 )
 
 GOLDEN_DERIVED = (
@@ -140,14 +141,14 @@ class TestPrimitives(unittest.TestCase):
 
 
 class TestAliases(unittest.TestCase):
-    """Группа «псевдонимы» (SPEC, раздел 4.1: 4 имени)."""
+    """Группа «псевдонимы» (SPEC, раздел 4.1: 5 имён)."""
 
-    # @method test_count_is_4() -> None
+    # @method test_count_is_5() -> None
     # @in    нет
     # @out   нет
-    # @does  Псевдонимов ровно 4: EMIT, KEY, EXIT, BYE.
-    def test_count_is_4(self):
-        self.assertEqual(len(alias_names()), 4)
+    # @does  Псевдонимов ровно 5: EMIT, KEY, EXIT, BYE, QUIT.
+    def test_count_is_5(self):
+        self.assertEqual(len(alias_names()), 5)
         self.assertEqual(sorted(alias_names()),
                          sorted(rec[0] for rec in GOLDEN_ALIASES))
 
@@ -174,10 +175,12 @@ class TestAliases(unittest.TestCase):
     # @method test_lowercase_is_none() -> None
     # @in    нет
     # @out   нет
-    # @does  Сточное «emit» — не псевдоним: регистр значим.
+    # @does  Сточные «emit», «bye», «quit» — не псевдонимы: регистр
+    # @does  значим.
     def test_lowercase_is_none(self):
         self.assertIsNone(primitive_instr("emit"))
         self.assertIsNone(primitive_instr("bye"))
+        self.assertIsNone(primitive_instr("quit"))
 
 
 class TestDerived(unittest.TestCase):
@@ -329,6 +332,7 @@ class TestFind(unittest.TestCase):
     def test_find_alias(self):
         self.assertEqual(find_word("EMIT"), ("alias", "SYS 1"))
         self.assertEqual(find_word("BYE"), ("alias", "HALT 0"))
+        self.assertEqual(find_word("QUIT"), ("alias", "HALT 16"))
 
     # @method test_find_derived() -> None
     # @in    нет
@@ -364,11 +368,11 @@ class TestLists(unittest.TestCase):
     # @method test_word_names_count_and_unique() -> None
     # @in    нет
     # @out   нет
-    # @does  Всего 53 слова (29 + 4 + 20), без повторов.
+    # @does  Всего 54 слова (29 + 5 + 20), без повторов.
     def test_word_names_count_and_unique(self):
         names = word_names()
-        self.assertEqual(len(names), 53)
-        self.assertEqual(len(set(names)), 53)
+        self.assertEqual(len(names), 54)
+        self.assertEqual(len(set(names)), 54)
 
     # @method test_word_names_order() -> None
     # @in    нет
