@@ -2,15 +2,16 @@
 # @file    tests/test_l2_disasm.py
 # @layer   T0
 # @branch  l2.uasm.disasm
-# @desc    Тесты подшагов 1-2 ветви l2.uasm.disasm: каркас, таблица
-# @desc    мнемоник, поле imm64 и печать десятичного значения
+# @desc    Тесты подшагов 1-3 ветви l2.uasm.disasm: каркас, таблица
+# @desc    мнемоник, поле imm64, печать десятичного значения и хвост DB
 # @desc    (src/l2/disasm.ubrk): сборка настоящей командой compile, пустой
 # @desc    вход, опкоды без imm64 — по строке на мнемонику, инструкции
 # @desc    с imm64 — золотая сверка с эталоном disasm байт в байт,
-# @desc    обрыв поля imm64 — останов с кодом 0, сквозной прогон
-# @desc    настоящими процессами.
+# @desc    хвост DB с опкода останова (обрыв поля, неизвестный опкод,
+# @desc    длины хвоста, устаревшее iv/ii) — эталон байт в байт,
+# @desc    сквозной прогон настоящими процессами.
 
-"""Тесты подшагов 1-2 ветви l2.uasm.disasm (SPEC/L4-SELFHOST.txt, раздел 7).
+"""Тесты подшагов 1-3 ветви l2.uasm.disasm (SPEC/L4-SELFHOST.txt, раздел 7).
 
 Дизассемблер на uBrick (src/l2/disasm.ubrk) собирается настоящей командой
 ubrick_cli compile (кирпич l2_image) и исполняется кирпичом run_with_io
@@ -18,15 +19,19 @@ ubrick_cli compile (кирпич l2_image) и исполняется кирпи�
 uAsm.
 
 Подшаг 1: пустой вход — пустой вывод и код 0; байт известного опкода без
-imm64 — строка «МНЕМОНИКА»; неизвестный код — останов декодирования,
-код 0.
+imm64 — строка «МНЕМОНИКА»; границы шести диапазонов таблицы мнемоник.
 
 Подшаг 2: опкод с полем imm64 читает восемь байтов поля (hasimm,
 getimm); полное поле — строка «МНЕМОНИКА значение», сверенная с эталоном
-disasm байт в байт (золотые значения 0, 1, 12345, 2^64-1); обрыв поля
-(0-7 байтов) — останов с кодом 0, строка не печатается: хвост DB —
-подшаг 3, поэтому выходы с обрывом и неизвестными кодами эталону
-не равны и сверяются по контракту подшага.
+disasm байт в байт (золотые значения 0, 1, 12345, 2^64-1).
+
+Подшаг 3: останов декодирования (неизвестный опкод, обрыв поля imm64)
+печатает хвост DB с опкода останова до конца входа — по восемь
+десятичных аргументов на строку (SPEC/L4-SELFHOST.txt, раздел 5);
+сверка с эталоном disasm байт в байт: дыры таблицы, обрывы поля 0-7
+байтов, длины хвоста 1-18 (короткая строка, ровно восемь аргументов,
+полная строка плюс один), устаревшие iv/ii прежних инструкций не
+попадают в хвост, смешанные программы с данными в конце.
 """
 
 import os
@@ -94,6 +99,20 @@ def feed(image, data):
     return tk.run_with_io(image, data)
 
 
+# @method gold(image, data) -> None
+# @in    image: bytes — образ дизассемблера
+# @in    data: bytes — байты входа (дизассемблируемый образ)
+# @out   нет (утверждение теста)
+# @does  Золотая сверка одного входа с эталоном disasm байт в байт:
+# @does  код завершения 0 и вывод равен эталону (SPEC/L4-SELFHOST.txt,
+# @does  раздел 6); кирпич золотых тестов ветви.
+# @depends feed, ref_disasm
+def gold(image, data):
+    code, out = feed(image, data)
+    assert (code, out) == (0, ref_disasm(data).encode()), (
+        code, out, ref_disasm(data).encode())
+
+
 class TestCompile(unittest.TestCase):
     """Каркас собирается настоящей командой compile."""
 
@@ -110,7 +129,7 @@ class TestCompile(unittest.TestCase):
 
 
 class TestSkeleton(unittest.TestCase):
-    """Подшаг 1: EOF, опкоды без imm64, останов на дырах таблицы."""
+    """Подшаг 1: EOF, опкоды без imm64, границы диапазонов таблицы."""
 
     # @method test_empty_input() -> None
     # @in    нет
@@ -153,28 +172,6 @@ class TestSkeleton(unittest.TestCase):
             code, out = feed(image, bytes([opcode]))
             self.assertEqual((code, out), (0, (mnemonic + "\n").encode()))
 
-    # @method test_holes_stop() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Дыры между диапазонами и коды за таблицей: останов
-    # @does  декодирования — пустой вывод и код 0 (хвост DB — подшаг 3).
-    # @depends l2_image, feed
-    def test_holes_stop(self):
-        image = l2_image()
-        for opcode in HOLES:
-            code, out = feed(image, bytes([opcode]))
-            self.assertEqual((code, out), (0, b""))
-
-    # @method test_stop_keeps_prefix() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Останов на неизвестном коде сохраняет строки напечатанных
-    # @does  до него инструкций и не читает хвост входа.
-    # @depends l2_image, feed
-    def test_stop_keeps_prefix(self):
-        code, out = feed(l2_image(), b"\x00\x00\x08\x00")
-        self.assertEqual((code, out), (0, b"NOP\nNOP\n"))
-
 
 class TestImm(unittest.TestCase):
     """Подшаг 2: инструкции с imm64 — «МНЕМОНИКА значение» (десятичное)."""
@@ -184,7 +181,7 @@ class TestImm(unittest.TestCase):
     # @out   нет
     # @does  Границы imm-опкодов (PICK, JMP, CALL, HALT, SYS) с полным
     # @does  полем — золотая сверка строки с эталоном disasm байт в байт.
-    # @depends l2_image, feed, ref_disasm
+    # @depends l2_image, gold
     def test_imm_bounds(self):
         image = l2_image()
         pairs = (
@@ -192,9 +189,7 @@ class TestImm(unittest.TestCase):
             (0x43, 64), (0x45, 16), (0x50, 1),
         )
         for opcode, value in pairs:
-            data = bytes([opcode]) + tk.imm64(value)
-            code, out = feed(image, data)
-            self.assertEqual((code, out), (0, ref_disasm(data).encode()))
+            gold(image, bytes([opcode]) + tk.imm64(value))
 
     # @method test_imm_values() -> None
     # @in    нет
@@ -202,52 +197,130 @@ class TestImm(unittest.TestCase):
     # @does  Каждый imm-опкод с каждым золотым значением (0, 1, 12345,
     # @does  2^64-1) — вывод равен эталону disasm байт в байт, код 0
     # @does  (SPEC/L4-SELFHOST.txt, раздел 6: золотой набор).
-    # @depends l2_image, feed, ref_disasm
+    # @depends l2_image, gold
     def test_imm_values(self):
         image = l2_image()
         for rec in IMM:
             for value in VALUES:
-                data = bytes([rec[0]]) + tk.imm64(value)
-                code, out = feed(image, data)
-                self.assertEqual(code, 0)
-                self.assertEqual(out, ref_disasm(data).encode())
-
-    # @method test_imm_cut_stops() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Обрыв поля imm64 (0-7 байтов после опкода) — останов
-    # @does  декодирования: строка не печатается, вывод пуст, код 0;
-    # @does  хвост DB — подшаг 3 (SPEC/L4-SELFHOST.txt, раздел 6).
-    # @depends l2_image, feed
-    def test_imm_cut_stops(self):
-        image = l2_image()
-        for rec in IMM:
-            for count in range(8):
-                data = bytes([rec[0]]) + b"\x39" * count
-                code, out = feed(image, data)
-                self.assertEqual((code, out), (0, b""))
-
-    # @method test_imm_cut_keeps_prefix() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Обрыв поля после напечатанных инструкций сохраняет строки
-    # @does  префикса: NOP напечатан, PUSH без полного поля — останов.
-    # @depends l2_image, feed
-    def test_imm_cut_keeps_prefix(self):
-        code, out = feed(l2_image(), b"\x00\x01\x39\x30\x00\x13")
-        self.assertEqual((code, out), (0, b"NOP\n"))
+                gold(image, bytes([rec[0]]) + tk.imm64(value))
 
     # @method test_mixed_stream() -> None
     # @in    нет
     # @out   нет
     # @does  Смешанный поток инструкций обоих видов — золотая сверка
     # @does  всего вывода с эталоном disasm байт в байт (SPEC, раздел 6).
-    # @depends l2_image, feed, ref_disasm
+    # @depends l2_image, gold
     def test_mixed_stream(self):
-        data = (b"\x00" + b"\x01" + tk.imm64(12345) + b"\x13"
-                + b"\x45" + tk.imm64(1))
-        code, out = feed(l2_image(), data)
-        self.assertEqual((code, out), (0, ref_disasm(data).encode()))
+        gold(l2_image(), b"\x00" + b"\x01" + tk.imm64(12345) + b"\x13"
+             + b"\x45" + tk.imm64(1))
+
+
+class TestDbTail(unittest.TestCase):
+    """Подшаг 3: хвост DB с опкода останова — эталон байт в байт."""
+
+    # @method test_holes_tail_golden() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Дыры между диапазонами и коды за таблицей одним байтом:
+    # @does  останов декодирования с хвостом DB из одного опкода —
+    # @does  строка «DB <опкод>», код 0, сверка с эталоном байт в байт.
+    # @depends l2_image, gold
+    def test_holes_tail_golden(self):
+        image = l2_image()
+        for opcode in HOLES:
+            gold(image, bytes([opcode]))
+
+    # @method test_imm_cut_tail_golden() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Обрыв поля imm64 (0-7 байтов после опкода) — останов
+    # @does  с хвостом DB: опкод и прочитанные байты поля первой строкой
+    # @does  данных; сверка с эталоном байт в байт, код 0 (SPEC,
+    # @does  раздел 5: хвост DB — опкод и прочитанные байты поля).
+    # @depends l2_image, gold
+    def test_imm_cut_tail_golden(self):
+        image = l2_image()
+        for rec in IMM:
+            for count in range(8):
+                gold(image, bytes([rec[0]]) + b"\x39" * count)
+
+    # @method test_stop_keeps_prefix() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Останов на неизвестном коде сохраняет строки напечатанных
+    # @does  до него инструкций и печатает хвост DB с опкода останова
+    # @does  (включая данные после него); сверка с эталоном.
+    # @depends l2_image, gold
+    def test_stop_keeps_prefix(self):
+        gold(l2_image(), b"\x00\x00\x08\x00")
+
+    # @method test_imm_cut_keeps_prefix() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Обрыв поля после напечатанных инструкций: префикс сохранён,
+    # @does  хвост DB — опкод PUSH и прочитанные байты поля; сверка
+    # @does  с эталоном байт в байт.
+    # @depends l2_image, gold
+    def test_imm_cut_keeps_prefix(self):
+        gold(l2_image(), b"\x00\x01\x39\x30\x00\x13")
+
+    # @method test_tail_lengths_golden() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Хвосты данных всех длин 1-18 (короткая строка, ровно
+    # @does  восемь аргументов, полная строка плюс один, две полных
+    # @does  плюс один) на двух неизвестных опкодах — группировка
+    # @does  по восемь аргументов, сверка с эталоном байт в байт
+    # @does  (SPEC, раздел 6: длина хвоста кратна восьми, короче
+    # @does  восьми и смешанная).
+    # @depends l2_image, gold
+    def test_tail_lengths_golden(self):
+        image = l2_image()
+        for opcode in (0x51, 0xFF):
+            for count in range(18):
+                data = bytes([opcode]) + bytes(
+                    (i * 37 + 11) & 0xFF for i in range(count))
+                gold(image, data)
+
+    # @method test_tail_exact_lines() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Точная форма строк DB: восемь аргументов — одна строка
+    # @does  без пустого хвоста; девять — полная строка и неполная
+    # @does  вторая; аргументы — десятичные байты 0..255 через пробел.
+    # @depends l2_image, feed
+    def test_tail_exact_lines(self):
+        image = l2_image()
+        code, out = feed(image, b"\x51" + bytes(range(7)))
+        self.assertEqual((code, out), (0, b"DB 81 0 1 2 3 4 5 6\n"))
+        code, out = feed(image, b"\x51" + bytes(range(8)))
+        self.assertEqual((code, out),
+                         (0, b"DB 81 0 1 2 3 4 5 6\nDB 7\n"))
+
+    # @method test_tail_stale_ii_golden() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Устаревшие iv/ii прежней инструкции с полем imm64 не
+    # @does  попадают в хвост DB следующего неизвестного опкода (dbstop
+    # @does  обнуляет ii): после PUSH 5 — хвост только «DB 255»; сверка
+    # @does  с эталоном байт в байт.
+    # @depends l2_image, gold
+    def test_tail_stale_ii_golden(self):
+        image = l2_image()
+        gold(image, b"\x01" + tk.imm64(5) + b"\xff")
+        gold(image, b"\x01" + tk.imm64(0x0102030405060708)
+             + b"\x51\x07\x08")
+
+    # @method test_tail_mixed_golden() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Смешанная программа: инструкции обоих видов, затем данные
+    # @does  с опкода останова — весь вывод равен эталону disasm байт
+    # @does  в байт (SPEC, раздел 6: смешанные программы).
+    # @depends l2_image, gold
+    def test_tail_mixed_golden(self):
+        gold(l2_image(), b"\x00\x01" + tk.imm64(12345) + b"\x13"
+             + b"\x45" + tk.imm64(1) + b"\x51\x07\x08")
 
 
 class TestProcess(unittest.TestCase):
@@ -280,6 +353,33 @@ class TestProcess(unittest.TestCase):
             self.assertEqual(run.returncode, 0)
             self.assertEqual(
                 run.stdout, b"NOP\nPUSH 12345\nSTORE64\nHALT 0\n")
+
+    # @method test_process_tail() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Сквозной прогон с хвостом DB во входе: неизвестный опкод
+    # @does  и данные после него печатаются директивой DB, код 0
+    # @does  (SPEC, раздел 5: останов декодирования — данные директивами
+    # @does  DB до конца входа).
+    # @depends l2_source
+    # @uses   subprocess — запуск инструментов настоящими процессами
+    def test_process_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = os.path.join(tmp, "disasm.uvm")
+            src = os.path.join(tmp, "in.uvm")
+            with open(src, "wb") as handle:
+                handle.write(b"\x00\x51\x01\x02")
+            compile_code = subprocess.call(
+                [sys_python(), tools_path("ubrick_cli.py"), "compile",
+                 l2_source(), image],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.assertEqual(compile_code, 0)
+            with open(src, "rb") as handle:
+                run = subprocess.run(
+                    [sys_python(), tools_path("uvm_cli.py"), image],
+                    stdin=handle, capture_output=True)
+            self.assertEqual(run.returncode, 0)
+            self.assertEqual(run.stdout, b"NOP\nDB 81 1 2\n")
 
 
 # @method sys_python() -> str
