@@ -1,0 +1,85 @@
+КАРТОЧКИ ФАЙЛА tests/test_uasm_integration.py
+
+Ветвь: t0.uasm.integration
+Слой: T0
+Методов: 12
+Генерируется tools/registry_scan.py; вручную не редактировать.
+Описание: Интеграционные программы Этапа 2: исходники src/*.uasm
+          собираются командой uasm_cli asm и исполняются uvm_cli; «вывод
+          символа» и «арифметика» — байт в байт с эталонами Этапа 1,
+          «вложенные CALL/RET» — метками, с тем же поведением
+          (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2).
+
+МЕТОД repo_root() -> str
+  вход:        нет
+  выход:       root: str — корень репозитория (каталог над tests)
+  функция:     Даёт корень репозитория для путей src/ и запуска
+               инструментов настоящим процессом в TestProcess.
+
+МЕТОД src_path(name) -> str
+  вход:        name: str — имя исходника в src/, например "hello.uasm"
+  выход:       path: str — путь к исходнику слоя L2
+  функция:     Строит путь к программе .uasm из каталога src/.
+
+МЕТОД cli_image(name) -> bytes
+  вход:        name: str — имя исходника в src/, например "hello.uasm"
+  выход:       image: bytes — образ, собранный командой asm; None —
+               ошибка
+  функция:     Собирает src/NAME настоящей командой uasm_cli (режим asm,
+               временный файл образа) и возвращает байты файла; при
+               ошибке сборки команда сама печатает сообщение в stderr.
+  использует:  sys.stderr — стандартный вывод ошибок хоста (через cli)
+  зависимости: uasm_cli.main
+
+МЕТОД test_cli_asm_matches_reference() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Команда asm собирает исходник в образ, равный эталону
+               Этапа 1 prog_char_output: PUSH 'H', SYS 1, PUSH 'i', SYS
+               1, HALT 0.
+
+МЕТОД test_uvm_cli_outputs_hi() -> None
+  вход:        нет
+  выход:       нет
+  функция:     uvm_cli: код 0, в stdout — "Hi".
+
+МЕТОД test_cli_asm_matches_reference() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Команда asm собирает исходник с константами a, b, k в
+               образ, равный эталону Этапа 1 prog_arithmetic.
+
+МЕТОД test_run_image_stack_is_20() -> None
+  вход:        нет
+  выход:       нет
+  функция:     run_image: код 0, на стеке данных — 20.
+
+МЕТОД test_uvm_cli_silent_zero() -> None
+  вход:        нет
+  выход:       нет
+  функция:     uvm_cli: код 0, вывода нет (результат остаётся в машине).
+
+МЕТОД test_run_image_semantics() -> None
+  вход:        нет
+  выход:       нет
+  функция:     run_image: код 0, вывод "!", стек [111, 222], стек
+               возвратов пуст — оба RET отработали.
+
+МЕТОД test_uvm_cli_outputs_marker() -> None
+  вход:        нет
+  выход:       нет
+  функция:     uvm_cli: код 0, в stdout — "!" (маркер после возвратов).
+
+МЕТОД test_roundtrip_stable() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Раунд-трип на реальной программе (SPEC/L2-UASM.txt,
+               раздел 8): assemble(disasm(B)) == B для образа,
+               собранного из src/nested_calls.uasm с метками.
+
+МЕТОД test_process_asm_and_run() -> None
+  вход:        нет
+  выход:       нет
+  функция:     python tools/uasm_cli.py asm src/hello.uasm ОБРАЗ.uvm,
+               затем python tools/uvm_cli.py ОБРАЗ.uvm: оба процесса
+               завершаются кодом 0, stdout второго — "Hi".
