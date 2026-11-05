@@ -1,0 +1,319 @@
+; @uadro
+; @file    src/l2/asmline.ubrk
+; @layer   L2
+; @branch  l2.uasm.assemble
+; @desc    Ассемблер uAsm — разбор строки в запись: use-включение главного
+; @desc    файла src/l2/assemble.ubrk (SPEC/L4-SELFHOST.txt, раздел 5А,
+; @desc    подшаг 4). Собственное воплощение эталона tools/uasm_line.py
+; @desc    (parse_line, SPEC/L2-UASM.txt, разделы 3-7): порядок разбора
+; @desc    строки — метка «имя:», мнемоника либо директива данных,
+; @desc    константа «имя = литерал», иначе «неизвестная мнемоника X»;
+; @desc    ошибки разбора строки — диагностика «uAsm: строка N: текст»
+; @desc    и код 16 (fail/failx главного файла). Запись — в var-ячейках
+; @desc    (раздел 5А, механика): rk — вид, rn — длина имени, rv —
+; @desc    значение константы, rc — код мнемоники; слово и операнд —
+; @desc    wa/wl и ra/rl, аргументы DB/DW — argc, длина литерала DS/DZ —
+; @desc    sl (кирпичи asmwords/asmlex). Листинг записей «N:V …»
+; @desc    (reclist главного файла) — промежуточный вывод подшага,
+; @desc    заменяемый проходами подшагов 5-6.
+
+; @method tbadname ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «плохое имя» (UTF-8 + 0)
+; @does  Данные: текст ошибки разбора метки и левой части константы
+; @does  (SPEC/L2-UASM.txt, раздел 7); печать — fail.
+text tbadname "плохое имя"
+
+; @method tunk ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «неизвестная мнемоника » (UTF-8 + 0)
+; @does  Данные: текст ошибки неизвестного первого слова с X в конце
+; @does  (SPEC/L2-UASM.txt, раздел 7); печать — failx.
+text tunk "неизвестная мнемоника "
+
+; @method textra ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «лишний операнд у » (UTF-8 + 0)
+; @does  Данные: текст ошибки операнда у инструкции без imm64 с X
+; @does  в конце (SPEC/L2-UASM.txt, разделы 5 и 7); печать — failx.
+text textra "лишний операнд у "
+
+; @method tmiss ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «нет операнда у » (UTF-8 + 0)
+; @does  Данные: текст ошибки отсутствующего операнда у инструкции
+; @does  с imm64 с X в конце (SPEC/L2-UASM.txt, разделы 5 и 7);
+; @does  печать — failx.
+text tmiss "нет операнда у "
+
+; @method tbadlit ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «плохой литерал» (UTF-8 + 0)
+; @does  Данные: текст ошибки пустой правой части константы — без X
+; @does  (SPEC/L2-UASM.txt, раздел 7); печать — fail.
+text tbadlit "плохой литерал"
+
+; @method tbadlitx ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «плохой литерал » (UTF-8 + 0)
+; @does  Данные: текст ошибки правой части константы с X в конце
+; @does  (SPEC/L2-UASM.txt, раздел 7); печать — failx.
+text tbadlitx "плохой литерал "
+
+; @method trange ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «литерал вне диапазона» (UTF-8 + 0)
+; @does  Данные: текст ошибки литерала вне -2^63..2^64-1 (SPEC/
+; @does  L2-UASM.txt, разделы 4 и 7); печать — fail.
+text trange "литерал вне диапазона"
+
+; @method tempty ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «пустая директива » (UTF-8 + 0)
+; @does  Данные: текст ошибки директивы DB/DW без аргументов с X
+; @does  в конце (SPEC/L2-UASM.txt, разделы 6 и 7); печать — failx.
+text tempty "пустая директива "
+
+; @method tbadstr ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «плохой строковый литерал» (UTF-8 + 0)
+; @does  Данные: текст ошибки литерала директивы DS/DZ — без X (SPEC/
+; @does  L2-UASM.txt, разделы 6 и 7); печать — fail.
+text tbadstr "плохой строковый литерал"
+
+; Ячейки записи строки (SPEC/L4-SELFHOST.txt, раздел 5А, механика):
+; rk — вид записи (1 метка, 2 константа, 3 инструкция, 4 DB, 5 DW,
+; 6 DS, 7 DZ; 0 — пустая строка, записи не даёт), rn — длина имени
+; метки либо константы (адрес имени — wa), rv — значение константы
+; по модулю 2^64, rc — код мнемоники инструкции. Слово и операнд —
+; клетки wa/wl и ra/rl, аргументы DB/DW — argc и буфер аргументов,
+; длина литерала DS/DZ — sl (asmwords/asmlex).
+var rk
+var rn
+var rv
+var rc
+
+; @method endlab ( -- ф )
+; @in    нет (клетки wa, wl — первое слово строки; wl >= 1)
+; @out   ф: слово — 1: слово оканчивается двоеточием (58); 0: иначе
+; @does  Признак строки-метки (SPEC/L2-UASM.txt, раздел 7, шаг 1
+; @does  порядка разбора): двоеточие примыкает к имени, без пробела
+; @does  (раздел 3); проверяется раньше мнемоники — имя метки может
+; @does  совпасть с мнемоникой (раздел 3); кирпич parseline.
+; @depends wa, wl, EQ, ADD, SUB, LOAD8
+: endlab
+  wa LOAD64 wl LOAD64 1 SUB ADD LOAD8 58 EQ ;
+
+; @method dolabel ( -- )
+; @in    нет (клетки wa, wl — слово с двоеточием; ra, rl — остаток)
+; @out   нет; не возвращается при ошибке; иначе rk = 1, rn — длина
+; @out   имени (адрес имени — wa)
+; @does  Разбирает метку «имя:» (SPEC/L2-UASM.txt, разделы 3 и 7):
+; @does  вся строка целиком — имя без двоеточия обязано быть именем
+; @does  по разделу 3 (isname), после метки слов быть не должно
+; @does  (rl = 0); нарушение — «плохое имя» (fail, код 16); успех —
+; @does  запись метки (parse_label эталона).
+; @depends wa, wl, rn, rk, ra, rl, isname, tbadname, fail, not, IF, THEN,
+; @depends EXIT
+: dolabel
+  wa LOAD64 wl LOAD64 1 SUB isname not IF tbadname fail THEN
+  rl LOAD64 0 EQ not IF tbadname fail THEN
+  1 rk STORE64
+  wl LOAD64 1 SUB rn STORE64 ;
+
+; @method doinstr ( code -- )
+; @in    code: слово — код мнемоники первого слова строки
+; @out   нет; не возвращается при ошибке; иначе rk = 3, rc = code,
+; @out   операнд — клетки ra/rl
+; @does  Разбирает инструкцию (SPEC/L2-UASM.txt, разделы 5 и 7,
+; @does  parse_instr эталона): у опкода с полем imm64 (hasimm)
+; @does  операнд обязателен — отсутствие «нет операнда у X» (X —
+; @does  мнемоника, wa/wl); у остальных операнд запрещён — наличие
+; @does  «лишний операнд у X»; операнд остаётся текстом ra/rl (имя
+; @does  может быть определено ниже — значение подставит проход 2,
+; @does  раздел 7); успех — запись инструкции.
+; @depends rc, rk, hasimm, ra, rl, wa, wl, tmiss, textra, failx, EQ, NEQ,
+; @depends DUP, DROP, IF, ELSE, THEN
+: doinstr
+  DUP rc STORE64
+  hasimm
+  IF
+    rl LOAD64 0 EQ IF wa LOAD64 wl LOAD64 tmiss failx THEN
+  ELSE
+    rl LOAD64 0 NEQ IF wa LOAD64 wl LOAD64 textra failx THEN
+  THEN
+  3 rk STORE64 ;
+
+; @method direq ( -- k 1 | 0 )
+; @in    нет (клетки wa, wl — первое слово строки)
+; @out   pair: k и 1 — слово — директива данных, k = 4 (DB), 5 (DW),
+; @out   6 (DS), 7 (DZ) — вид записи директивы; 0 — не директива
+; @does  Признак и вид директивы данных (SPEC/L2-UASM.txt, разделы 6
+; @does  и 7): слово из двух байтов — «D» (68) и «B» (66), «W» (87),
+; @does  «S» (83) либо «Z» (90); роль слова определяет позиция в строке
+; @does  (раздел 3), имя метки «DS:» директивой не считается; кирпичи
+; @does  parseline и isdbdw.
+; @depends wa, wl, EQ, not, DUP, DROP, IF, ELSE, THEN, EXIT, LOAD8, ADD
+: direq
+  wl LOAD64 2 EQ not IF 0 EXIT THEN
+  wa LOAD64 LOAD8 68 EQ not IF 0 EXIT THEN
+  wa LOAD64 1 ADD LOAD8 DUP 66 EQ IF DROP 4 1 EXIT THEN
+  DUP 87 EQ IF DROP 5 1 EXIT THEN
+  DUP 83 EQ IF DROP 6 1 EXIT THEN
+  90 EQ IF 7 1 ELSE 0 THEN ;
+
+; @method isdbdw ( -- ф )
+; @in    нет (клетки wa, wl — первое слово строки)
+; @out   ф: слово — 1: первое слово — директива DB или DW; 0: иначе
+; @does  Признак строки директивы DB/DW (SPEC/L2-UASM.txt, раздел 6):
+; @does  слово из двух байтов «DB» (68, 66) либо «DW» (68, 87); только
+; @does  эти строки заполняют буфер аргументов (doline главного файла,
+; @does  подшаг 4: лимит 256 пар — аргументы DB/DW, SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А).
+; @depends wa, wl, EQ, not, DUP, DROP, IF, EXIT, THEN, LOAD8, ADD
+: isdbdw
+  wl LOAD64 2 EQ not IF 0 EXIT THEN
+  wa LOAD64 LOAD8 68 EQ not IF 0 EXIT THEN
+  wa LOAD64 1 ADD LOAD8 DUP 66 EQ IF DROP 1 EXIT THEN
+  87 EQ ;
+
+; @method dodb ( -- )
+; @in    нет (клетки wa, wl — слово DB; argc — аргументы директивы)
+; @out   нет; не возвращается при ошибке; иначе rk = 4
+; @does  Разбирает директиву DB (SPEC/L2-UASM.txt, разделы 6 и 7,
+; @does  parse_data эталона): хотя бы один аргумент обязателен —
+; @does  пустой остаток «пустая директива DB» (X — слово, failx);
+; @does  аргументы остаются текстами в буфере пар (значения подставит
+; @does  проход 2); успех — запись DB.
+; @depends argc, rk, wa, wl, tempty, failx, EQ, IF, THEN
+: dodb
+  argc LOAD64 0 EQ IF wa LOAD64 wl LOAD64 tempty failx THEN
+  4 rk STORE64 ;
+
+; @method dodw ( -- )
+; @in    нет (клетки wa, wl — слово DW; argc — аргументы директивы)
+; @out   нет; не возвращается при ошибке; иначе rk = 5
+; @does  Разбирает директиву DW (SPEC/L2-UASM.txt, разделы 6 и 7):
+; @does  хотя бы один аргумент обязателен — «пустая директива DW»;
+; @does  успех — запись DW (dodb для DB).
+; @depends argc, rk, wa, wl, tempty, failx, EQ, IF, THEN
+: dodw
+  argc LOAD64 0 EQ IF wa LOAD64 wl LOAD64 tempty failx THEN
+  5 rk STORE64 ;
+
+; @method dods ( -- )
+; @in    нет (клетки ra, rl — остаток-литерал директивы DS)
+; @out   нет; не возвращается при ошибке; иначе rk = 6, sl — длина
+; @out   декодированных байтов литерала
+; @does  Разбирает директиву DS (SPEC/L2-UASM.txt, разделы 6 и 7):
+; @does  остаток строки — ровно один строковый литерал (parsestr);
+; @does  нарушение — «плохой строковый литерал» (fail, код 16);
+; @does  успех — запись DS (dodb для DB).
+; @depends ra, rl, rk, parsestr, sl, tbadstr, fail, not, IF, THEN
+: dods
+  ra LOAD64 rl LOAD64 parsestr not IF tbadstr fail THEN
+  6 rk STORE64 ;
+
+; @method dodz ( -- )
+; @in    нет (клетки ra, rl — остаток-литерал директивы DZ)
+; @out   нет; не возвращается при ошибке; иначе rk = 7, sl — длина
+; @out   декодированных байтов литерала (байт 0 добавит кодирование,
+; @out   подшаг 6)
+; @does  Разбирает директиву DZ (SPEC/L2-UASM.txt, разделы 6 и 7):
+; @does  один строковый литерал, как DS; нарушение — «плохой
+; @does  строковый литерал»; успех — запись DZ.
+; @depends ra, rl, rk, parsestr, sl, tbadstr, fail, not, IF, THEN
+: dodz
+  ra LOAD64 rl LOAD64 parsestr not IF tbadstr fail THEN
+  7 rk STORE64 ;
+
+; @method dodata ( k -- )
+; @in    k: слово — вид записи директивы из direq (4 DB, 5 DW, 6 DS, 7 DZ)
+; @out   нет; не возвращается при ошибке; иначе rk = k
+; @does  Разбирает директиву данных по виду (SPEC/L2-UASM.txt, раздел 6):
+; @does  dodb, dodw, dods и dodz — по одному кирпичу на директиву.
+; @depends dodb, dodw, dods, dodz, EQ, DUP, DROP, IF, EXIT, THEN
+: dodata
+  DUP 4 EQ IF DROP dodb EXIT THEN
+  DUP 5 EQ IF DROP dodw EXIT THEN
+  DUP 6 EQ IF DROP dods EXIT THEN
+  DROP dodz ;
+
+; @method badlit ( a l -- )
+; @in    a: слово — адрес первого байта правой части константы
+; @in    l: слово — число байтов правой части (0 — правая часть пуста)
+; @out   нет; не возвращается: диагностика выводится в stdout, затем
+; @out   программа завершается кодом 16
+; @does  Печатает ошибку правой части константы (SPEC/L2-UASM.txt,
+; @does  раздел 7, bad_literal эталона): пустая правая часть —
+; @does  «плохой литерал» без X (fail); непустая — «плохой литерал X»
+; @does  (X — правая часть, failx).
+; @depends tbadlit, tbadlitx, fail, failx, EQ, DUP, DROP, IF, THEN
+: badlit
+  DUP 0 EQ
+  IF DROP DROP tbadlit fail THEN
+  tbadlitx failx ;
+
+; @method parseconst ( s cut -- )
+; @in    s: слово — адрес начала чистой строки (= wa)
+; @in    cut: слово — адрес знака «=» вне кавычек в строке
+; @out   нет; не возвращается при ошибке; иначе rk = 2, rn — длина
+; @out   имени, rv — значение константы по модулю 2^64
+; @does  Разбирает константу «имя = литерал» (SPEC/L2-UASM.txt, разделы
+; @does  3-4 и 7, parse_const эталона): левая часть — rtrim [s, cut),
+; @does  обязана быть именем (isname), иначе «плохое имя» (проверка
+; @does  прежде литерала — порядок ошибок эталона); правая — ltrim
+; @does  [cut+1, конец строки): numlit решает литерал — kind 0 «плохой
+; @does  литерал [X]» (badlit), kind 2 «литерал вне диапазона», kind 1 —
+; @does  значение rv по модулю 2^64 (отрицательные оборачивает numlit);
+; @does  имя — [wa, rn) (левая часть без концевых пробелов).
+; @depends ra, rl, rk, rn, rv, ltrim, rtrim, numlit, isname, badlit,
+; @depends tbadname, trange, fail, ADD, SUB, OVER, DUP, DROP, SWAP,
+; @depends STORE64, LOAD64, EQ, not, IF, THEN, EXIT
+: parseconst
+  OVER OVER
+  rtrim
+  OVER SUB
+  OVER OVER isname
+  not IF DROP DROP DROP DROP tbadname fail THEN
+  rn STORE64
+  DROP
+  DUP 1 ADD
+  ra LOAD64 rl LOAD64 ADD
+  ltrim
+  OVER SUB
+  OVER OVER numlit
+  DUP 0 EQ
+  IF DROP badlit THEN
+  DUP 2 EQ
+  IF DROP DROP DROP DROP DROP trange fail THEN
+  DROP
+  lexv LOAD64 rv STORE64
+  DROP DROP
+  DROP DROP
+  2 rk STORE64 ;
+
+; @method parseline ( -- )
+; @in    нет (клетки wa/wl — первое слово, ra/rl — остаток чистой
+; @in    строки; для DB/DW заполнены argc и буфер аргументов)
+; @out   нет; не возвращается при ошибке разбора; иначе клетки записи
+; @out   rk/rn/rv/rc (вид, имя, значение, код) готовы для проходов
+; @does  Разбирает строку в запись по порядку раздела 7 SPEC/
+; @does  L2-UASM.txt (parse_line эталона): слово с двоеточием — метка
+; @does  (dolabel); мнемоника — инструкция (doinstr); директива данных
+; @does  — dodata; знак «=» вне кавычек в чистой строке [wa, ra+rl) —
+; @does  константа (parseconst; findch, «=» = 61); иначе — «неизвестная
+; @does  мнемоника X» (X — слово, failx). Чистая строка целиком
+; @does  восстанавливается из клеток: начало — wa, конец — ra+rl.
+; @depends endlab, dolabel, mnem, doinstr, direq, dodata, parseconst,
+; @depends wa, wl, ra, rl, findch, tunk, failx, ADD, DUP, DROP, EQ,
+; @depends IF, THEN, EXIT
+: parseline
+  endlab IF dolabel EXIT THEN
+  mnem IF doinstr EXIT THEN
+  direq IF dodata EXIT THEN
+  wa LOAD64 ra LOAD64 rl LOAD64 ADD
+  61 findch
+  DUP ra LOAD64 rl LOAD64 ADD EQ
+  IF DROP DROP wa LOAD64 wl LOAD64 tunk failx THEN
+  parseconst ;
