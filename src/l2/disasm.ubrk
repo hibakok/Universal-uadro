@@ -5,10 +5,12 @@
 ; @desc    Дизассемблер uAsm — собственное воплощение Этапа 4: вход —
 ; @desc    образ UVM в stdin (KEY), выход — текст uAsm в stdout (EMIT),
 ; @desc    код завершения 0 (SPEC/L4-SELFHOST.txt, разделы 4-5).
-; @desc    Подшаг 1 (каркас и таблица мнемоник): каждый известный опкод —
-; @desc    строка «МНЕМОНИКА»; неизвестный код и EOF — останов. Печать
-; @desc    значений imm64 — подшаг 2, хвост DB — подшаг 3, золотая сверка
-; @desc    с эталоном — подшаг 4.
+; @desc    Подшаги 1-2: каркас, таблица мнемоник, поле imm64 и печать
+; @desc    десятичного значения. Опкод без поля — строка «МНЕМОНИКА»;
+; @desc    опкод с полем imm64 — строка «МНЕМОНИКА значение» (десятичное
+; @desc    слово 0..2^64-1); неизвестный код, EOF и обрыв поля —
+; @desc    останов декодирования (строка не печатается). Хвост DB —
+; @desc    подшаг 3, золотая сверка с эталоном — подшаг 4.
 
 ; Таблицы мнемоник (SPEC/L4-SELFHOST.txt, раздел 5): шесть строк по
 ; диапазонам кодов; запись — восемь байтов: мнемоника, дополненная
@@ -57,6 +59,13 @@ text tjmp "JMP\0\0\0\0\0JZ\0\0\0\0\0\0JNZ\0\0\0\0\0CALL\0\0\0\0RET\0\0\0\0\0HALT
 ; @does  по адресу tsys.
 text tsys "SYS\0\0\0\0\0"
 
+; Ячейки поля imm64: iv — накопленное значение поля, ip — текущая
+; степень 256 (1, 256, 256^2, ...), ii — число прочитанных байтов
+; поля 0..8 (SPEC/L4-SELFHOST.txt, раздел 5, потоковая модель).
+var iv
+var ip
+var ii
+
 ; @method scale8 ( idx base -- addr )
 ; @in    idx: слово — номер записи в строке таблицы (код - низ диапазона)
 ; @in    base: слово — адрес первой записи строки таблицы мнемоник
@@ -90,18 +99,99 @@ text tsys "SYS\0\0\0\0\0"
   DUP 0x50 GTU IF DROP 0 EXIT THEN
   DROP tsys 1 ;
 
+; @method hasimm ( code -- flag )
+; @in    code: слово — опкод 0..255
+; @out   flag: слово — 1, если за опкодом следует поле imm64, иначе 0
+; @does  Признак поля imm64 без таблицы (SPEC/L4-SELFHOST.txt, раздел 5):
+; @does  сравнения и диапазоны — коды 0x01, 0x07, 0x40-0x43, 0x45, 0x50.
+; @depends EQ, LTU, LEU
+: hasimm
+  DUP 0x01 EQ IF DROP 1 EXIT THEN
+  DUP 0x07 EQ IF DROP 1 EXIT THEN
+  DUP 0x40 LTU IF DROP 0 EXIT THEN
+  DUP 0x43 LEU IF DROP 1 EXIT THEN
+  DUP 0x45 EQ IF DROP 1 EXIT THEN
+  DUP 0x50 EQ IF DROP 1 EXIT THEN
+  DROP 0 ;
+
+; @method keyok ( -- c 1 | 0 )
+; @in    нет (байт входа читается из stdin, KEY)
+; @out   pair: c и флаг 1 — прочитан байт; либо 0 без байта — EOF
+; @does  Читает байт входа (KEY): EOF даёт только флаг 0, байт — c
+; @does  и флаг 1; кирпичи чтения поля imm64 (immstep) и цикла main.
+; @depends KEY
+: keyok
+  KEY DUP -1 EQ IF DROP 0 EXIT THEN 1 ;
+
+; @method accbyte ( c -- )
+; @in    c: слово — прочитанный байт поля imm64 (0..255)
+; @out   нет; iv получает c * ip, ip — следующую степень 256
+; @does  Накапливает байт little-endian поля imm64: iv = iv + c * ip,
+; @does  ip = ip * 256 (SPEC/L4-SELFHOST.txt, раздел 5); кирпич immstep.
+; @depends MUL, ADD, ip, iv
+: accbyte
+  ip LOAD64 MUL
+  iv LOAD64 ADD
+  iv STORE64
+  ip LOAD64 256 MUL ip STORE64 ;
+
+; @method immstep ( -- done )
+; @in    нет (ячейки iv/ip/ii — состояние поля, см. карточки var)
+; @out   done: слово — 0: байт поля прочитан и накоплен; 1: поле
+; @out   прочитано целиком (ii = 8) либо вход кончился (EOF)
+; @does  Один шаг чтения поля imm64: восемь байтов уже прочитаны — флаг 1;
+; @does  иначе keyok: байт — accbyte и ii + 1, флаг 0; EOF — флаг 1.
+; @depends keyok, accbyte, ii
+: immstep
+  ii LOAD64 8 GEU IF 1 EXIT THEN
+  keyok IF accbyte ii LOAD64 1 ADD ii STORE64 0 ELSE 1 THEN ;
+
+; @method getimm ( -- )
+; @in    нет (байты поля читаются из stdin, KEY)
+; @out   нет; iv — значение поля (при ii = 8), ii — число прочитанных
+; @out   байтов поля 0..8, ip — степень 256 за последним байтом
+; @does  Читает поле imm64 (SPEC/L4-SELFHOST.txt, раздел 5): обнуляет
+; @does  iv, ставит ip = 1 и ii = 0, затем immstep до флага готовности;
+; @does  обрыв поля (ii < 8 после цикла) распознаёт вызывающий.
+; @depends iv, ip, ii, immstep
+: getimm
+  0 iv STORE64 1 ip STORE64 0 ii STORE64
+  BEGIN immstep UNTIL ;
+
+; @method printu ( u -- )
+; @in    u: слово — значение 0..2^64-1
+; @out   нет (цифры выводятся в stdout, EMIT)
+; @does  Печатает десятичное число (SPEC/L4-SELFHOST.txt, раздел 5):
+; @does  старшие разряды — рекурсивный вызов с частным от UDIV 10,
+; @does  затем младший разряд — остаток UMOD 10 + '0'; u = 0 даёт «0».
+; @depends UDIV, UMOD, ADD, EMIT, printu
+: printu
+  DUP 10 UDIV SWAP 10 UMOD
+  SWAP DUP IF printu ELSE DROP THEN
+  48 ADD EMIT ;
+
 ; @method main ( -- )
 ; @in    нет (вход инструмента — байты stdin, KEY)
 ; @out   нет (выход инструмента — байты stdout, EMIT; код завершения 0)
-; @does  Каркас дизассемблера: читает байт (KEY); EOF — завершение
-; @does  (BYE); известный опкод — строка «МНЕМОНИКА» (prints до нуля
-; @does  и cr); неизвестный код — останов декодирования (хвост DB —
-; @does  подшаг 3 ветви, SPEC/L4-SELFHOST.txt, раздел 5). Флаг IF снимается
-; @does  с DS, поэтому ветвь ELSE не чистит стек.
-; @depends KEY, BYE, rowbase, prints, cr
+; @does  Цикл дизассемблера: читает байт опкода (KEY); EOF — завершение
+; @does  (BYE). Опкод с полем imm64 (hasimm): getimm читает поле; обрыв
+; @does  поля (ii < 8) — останов, строка не печатается (хвост DB —
+; @does  подшаг 3); полное поле — строка «МНЕМОНИКА значение»: prints,
+; @does  space и десятичное значение iv — printu. Опкод без поля —
+; @does  строка «МНЕМОНИКА» (rowbase, prints). Неизвестный код —
+; @does  останов декодирования. Флаги IF снимаются с DS, поэтому ветки
+; @does  после BYE стек не чистят.
+; @depends KEY, BYE, rowbase, hasimm, getimm, ii, iv, prints, space, cr, printu
 : main
   BEGIN
   KEY DUP -1 EQ IF DROP BYE THEN
-  rowbase IF prints ELSE BYE THEN
+  DUP hasimm
+  IF
+    getimm
+    ii LOAD64 8 LTU IF BYE THEN
+    rowbase IF prints space iv LOAD64 printu ELSE BYE THEN
+  ELSE
+    rowbase IF prints ELSE BYE THEN
+  THEN
   cr
   AGAIN ;
