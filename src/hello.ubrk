@@ -1,12 +1,14 @@
-; @uadro — исходник слоя L3 (uBrick)
-; Программа «вывод символа» (ветвь t0.ubrick.integration, Этап 3).
-; Строка данных text и производное слово prints (SPEC/L3-UBRICK.txt,
-; разделы 6 и 4.2): на stdout — "Hi", код завершения 0. Поведение —
-; как у эталона Этапа 2 src/hello.uasm; образ содержит все
-; производные слова словаря (SPEC, раздел 7), поэтому совпадает
-; поведение, а не байты.
+; @uadro
+; @file    src/hello.uasm
+; @layer   L2
+; @branch  t0.uasm.integration
+; @desc    Программа «вывод символа»: два SYS 1 выводят "Hi" в stdout,
+; @desc    HALT 0 завершает (SPEC/L0-UVM.txt, раздел 6); образ байт
+; @desc    в байт совпадает с эталоном Этапа 1 —
+; @desc    tests/test_uvm_integration.py, prog_char_output.
 
-text hi "Hi"
-
-: main
-hi prints ;
+PUSH 'H'
+SYS 1
+PUSH 'i'
+SYS 1
+HALT 0
