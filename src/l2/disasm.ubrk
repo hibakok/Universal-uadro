@@ -5,12 +5,14 @@
 ; @desc    Дизассемблер uAsm — собственное воплощение Этапа 4: вход —
 ; @desc    образ UVM в stdin (KEY), выход — текст uAsm в stdout (EMIT),
 ; @desc    код завершения 0 (SPEC/L4-SELFHOST.txt, разделы 4-5).
-; @desc    Подшаги 1-2: каркас, таблица мнемоник, поле imm64 и печать
-; @desc    десятичного значения. Опкод без поля — строка «МНЕМОНИКА»;
-; @desc    опкод с полем imm64 — строка «МНЕМОНИКА значение» (десятичное
-; @desc    слово 0..2^64-1); неизвестный код, EOF и обрыв поля —
-; @desc    останов декодирования (строка не печатается). Хвост DB —
-; @desc    подшаг 3, золотая сверка с эталоном — подшаг 4.
+; @desc    Подшаги 1-3: каркас, таблица мнемоник, поле imm64, печать
+; @desc    десятичного значения и хвост DB. Опкод без поля — строка
+; @desc    «МНЕМОНИКА»; опкод с полем imm64 — строка «МНЕМОНИКА
+; @desc    значение» (десятичное слово 0..2^64-1); неизвестный код и
+; @desc    обрыв поля — останов декодирования: с опкода останова до
+; @desc    конца входа данные печатаются директивами DB по восемь
+; @desc    аргументов на строку. Золотая сверка с эталоном на образах
+; @desc    программ этапов 1-2 и раунд-трип — подшаг 4.
 
 ; Таблицы мнемоник (SPEC/L4-SELFHOST.txt, раздел 5): шесть строк по
 ; диапазонам кодов; запись — восемь байтов: мнемоника, дополненная
@@ -59,12 +61,25 @@ text tjmp "JMP\0\0\0\0\0JZ\0\0\0\0\0\0JNZ\0\0\0\0\0CALL\0\0\0\0RET\0\0\0\0\0HALT
 ; @does  по адресу tsys.
 text tsys "SYS\0\0\0\0\0"
 
+; @method tdb ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «DB » (D, B, пробел, ноль)
+; @does  Данные: префикс строки директивы DB хвоста данных; печать —
+; @does  словом prints (до нулевого байта); кирпич dbsep.
+text tdb "DB "
+
 ; Ячейки поля imm64: iv — накопленное значение поля, ip — текущая
 ; степень 256 (1, 256, 256^2, ...), ii — число прочитанных байтов
 ; поля 0..8 (SPEC/L4-SELFHOST.txt, раздел 5, потоковая модель).
 var iv
 var ip
 var ii
+
+; Ячейки хвоста DB: jc — аргументы, напечатанные в текущей строке DB
+; (0..8; восемь — перевод строки и сброс в dbstep), ik — индекс байта
+; поля в цикле dbfield.
+var jc
+var ik
 
 ; @method scale8 ( idx base -- addr )
 ; @in    idx: слово — номер записи в строке таблицы (код - низ диапазона)
@@ -118,7 +133,8 @@ var ii
 ; @in    нет (байт входа читается из stdin, KEY)
 ; @out   pair: c и флаг 1 — прочитан байт; либо 0 без байта — EOF
 ; @does  Читает байт входа (KEY): EOF даёт только флаг 0, байт — c
-; @does  и флаг 1; кирпичи чтения поля imm64 (immstep) и цикла main.
+; @does  и флаг 1; кирпичи чтения поля imm64 (immstep) и хвоста DB
+; @does  (dbrest).
 ; @depends KEY
 : keyok
   KEY DUP -1 EQ IF DROP 0 EXIT THEN 1 ;
@@ -170,28 +186,129 @@ var ii
   SWAP DUP IF printu ELSE DROP THEN
   48 ADD EMIT ;
 
+; @method dbsep ( -- )
+; @in    нет
+; @out   нет (разделитель выводится в stdout, EMIT)
+; @does  Печатает разделитель перед аргументом директивы DB: первый
+; @does  аргумент строки — префикс «DB » (text-строка tdb, prints),
+; @does  остальные — пробел (space); кирпич dbstep.
+; @depends jc, tdb, prints, space
+: dbsep
+  jc LOAD64 IF space ELSE tdb prints THEN ;
+
+; @method dbstep ( c -- )
+; @in    c: слово — байт данных 0..255
+; @out   нет; аргумент DB выводится в stdout (EMIT)
+; @does  Печатает один аргумент директивы DB: разделитель dbsep
+; @does  и десятичное значение printu; ведёт счётчик строки jc:
+; @does  восемь аргументов — перевод строки (cr) и сброс счётчика
+; @does  (SPEC/L4-SELFHOST.txt, раздел 5: по восемь аргументов
+; @does  на строку).
+; @depends dbsep, printu, jc, cr
+: dbstep
+  dbsep printu
+  jc LOAD64 1 ADD jc STORE64
+  jc LOAD64 8 EQ IF 0 jc STORE64 cr THEN ;
+
+; @method dbfstep ( -- done )
+; @in    нет (ячейки iv/ii — прочитанный префикс поля, ik — индекс байта)
+; @out   done: слово — 0: байт поля напечатан, индекс движется; 1:
+; @out   все ii байтов префикса напечатаны
+; @does  Один шаг цикла dbfield: ik < ii — байт ik поля печатается
+; @does  dbstep (байт k = (iv >> 8k) AND 255: iv — little-endian
+; @does  значение прочитанного префикса поля), ik + 1, флаг 0;
+; @does  иначе флаг 1.
+; @depends ik, ii, iv, dbstep
+: dbfstep
+  ik LOAD64 ii LOAD64 LTU
+  IF
+    iv LOAD64 ik LOAD64 8 MUL SHR 0xFF AND dbstep
+    ik LOAD64 1 ADD ik STORE64 0
+  ELSE 1 THEN ;
+
+; @method dbfield ( -- )
+; @in    нет (ячейки iv/ii — прочитанный префикс поля imm64)
+; @out   нет; байты префикса поля выводятся аргументами DB (dbstep)
+; @does  Печатает байты прочитанного префикса поля imm64 — ii байтов
+; @does  little-endian значения iv (SPEC/L4-SELFHOST.txt, раздел 5:
+; @does  обрыв поля — хвост DB включает опкод и прочитанные байты
+; @does  поля): обнуляет ik и повторяет dbfstep до флага готовности.
+; @depends ik, dbfstep
+: dbfield
+  0 ik STORE64
+  BEGIN dbfstep UNTIL ;
+
+; @method dbrest ( -- )
+; @in    нет (байты читаются из stdin, KEY)
+; @out   нет; байты выводятся аргументами DB (dbstep)
+; @does  Печатает остаток входа до EOF аргументами директивы DB:
+; @does  keyok читает байт — dbstep и продолжение цикла; EOF — конец
+; @does  (данные после опкода останова, SPEC/L4-SELFHOST.txt, раздел 5).
+; @depends keyok, dbstep
+: dbrest
+  BEGIN keyok IF dbstep 0 ELSE 1 THEN UNTIL ;
+
+; @method dbend ( -- )
+; @in    нет (ячейка jc — аргументы текущей строки DB)
+; @out   нет (перевод строки выводится в stdout)
+; @does  Завершает хвост DB: неполная последняя строка (jc > 0) —
+; @does  перевод строки (cr); полная строка уже переведена dbstep.
+; @depends jc, cr
+: dbend
+  jc LOAD64 IF cr THEN ;
+
+; @method dbtail ( op -- )
+; @in    op: слово — байт опкода останова декодирования 0..255
+; @out   нет; не возвращается: хвост выводится в stdout, затем BYE
+; @does  Хвост DB останова (SPEC/L4-SELFHOST.txt, раздел 5): с опкода
+; @does  останова до конца входа данные печатаются директивами DB —
+; @does  dbstep печатает опкод, dbfield — прочитанные байты поля imm64
+; @does  (ii байтов little-endian значения iv; у останова без поля
+; @does  вызывающий заранее обнуляет ii), dbrest — остаток входа,
+; @does  dbend — неполную строку; счётчик строки jc обнуляется перед
+; @does  печатью; завершает программу (BYE, код 0).
+; @depends jc, dbstep, dbfield, dbrest, dbend, BYE
+: dbtail
+  0 jc STORE64
+  dbstep dbfield dbrest dbend BYE ;
+
+; @method dbstop ( op -- )
+; @in    op: слово — байт неизвестного опкода 0..255
+; @out   нет; не возвращается (завершает программу dbtail)
+; @does  Останов декодирования на неизвестном опкоде без поля imm64:
+; @does  байтов поля в хвосте нет — обнуляет ii (устаревшие iv/ii
+; @does  прежних инструкций не должны попасть в хвост) и передаёт
+; @does  опкод в dbtail.
+; @depends ii, dbtail
+: dbstop
+  0 ii STORE64 dbtail ;
+
 ; @method main ( -- )
 ; @in    нет (вход инструмента — байты stdin, KEY)
 ; @out   нет (выход инструмента — байты stdout, EMIT; код завершения 0)
 ; @does  Цикл дизассемблера: читает байт опкода (KEY); EOF — завершение
-; @does  (BYE). Опкод с полем imm64 (hasimm): getimm читает поле; обрыв
-; @does  поля (ii < 8) — останов, строка не печатается (хвост DB —
-; @does  подшаг 3); полное поле — строка «МНЕМОНИКА значение»: prints,
-; @does  space и десятичное значение iv — printu. Опкод без поля —
-; @does  строка «МНЕМОНИКА» (rowbase, prints). Неизвестный код —
-; @does  останов декодирования. Флаги IF снимаются с DS, поэтому ветки
-; @does  после BYE стек не чистят.
-; @depends KEY, BYE, rowbase, hasimm, getimm, ii, iv, prints, space, cr, printu
+; @does  (BYE, директив DB нет). Опкод с полем imm64 (hasimm): getimm
+; @does  читает поле; обрыв поля (ii < 8) — останов: dbtail печатает
+; @does  хвост DB с опкода и прочитанных байтов поля; полное поле —
+; @does  строка «МНЕМОНИКА значение»: prints, space и десятичное
+; @does  значение iv — printu. Опкод без поля — строка «МНЕМОНИКА»
+; @does  (rowbase, prints). Неизвестный код — останов декодирования:
+; @does  dbstop (без поля) либо dbtail (поле прочитано целиком) — хвост
+; @does  DB с опкода до конца входа. Флаги IF снимаются с DS; ветки
+; @does  останова не возвращаются (BYE внутри dbtail), успешные ветки
+; @does  снимают свою копию опкода словом DROP.
+; @depends KEY, BYE, rowbase, hasimm, getimm, ii, iv, prints, space, cr,
+; @depends printu, dbtail, dbstop
 : main
   BEGIN
   KEY DUP -1 EQ IF DROP BYE THEN
   DUP hasimm
   IF
     getimm
-    ii LOAD64 8 LTU IF BYE THEN
-    rowbase IF prints space iv LOAD64 printu ELSE BYE THEN
+    ii LOAD64 8 LTU IF dbtail THEN
+    DUP rowbase IF prints space iv LOAD64 printu DROP ELSE dbtail THEN
   ELSE
-    rowbase IF prints ELSE BYE THEN
+    DUP rowbase IF prints DROP ELSE dbstop THEN
   THEN
   cr
   AGAIN ;
