@@ -415,6 +415,19 @@ class TestBuildUbrk(unittest.TestCase):
         self.assertEqual(out, b"ABC")
         self.assertEqual(tk.stack_of(m), [])
 
+    # @method test_quit() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Псевдоним QUIT (HALT 16): программа завершается кодом 16 —
+    # @does  ошибка входа инструмента (SPEC/L3-UBRICK.txt, раздел 4.1,
+    # @does  v0.4); вывод пуст, стек пуст.
+    def test_quit(self):
+        m, code, out = run_of(": main QUIT ;")
+        self.assertEqual(code, 16)
+        self.assertEqual(out, b"")
+        self.assertEqual(tk.stack_of(m), [])
+
+
     # @method test_derived_words() -> None
     # @in    нет
     # @out   нет
