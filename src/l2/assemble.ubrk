@@ -9,19 +9,22 @@
 ; @desc    читается целиком в буфер источника 512 КиБ (readstep), вход
 ; @desc    сверх лимита — строка «вход слишком большой» и код 16. Подшаг 2
 ; @desc    (строки и слова): use-включения asmwords.ubrk (деление буфера
-; @desc    на строки, чистка строки, первое слово, аргументы парами)
-; @desc    и asmmnem.ubrk (таблица мнемоник и поиск кода). Подшаг 3
-; @desc    (литералы и имена): use-включение asmlex.ubrk — числовые формы,
-; @desc    минус, диапазон, имена и скан строковых литералов DS/DZ;
-; @desc    листинг «N:слово[=код] …» теперь с лексическими пометами
-; @desc    аргументов (lexlist) и сканом литерала DS/DZ (dsline) —
-; @desc    промежуточное поведение, заменяемое разбором записей в подшаге
-; @desc    4. Записи, символы и проходы — подшаги 4-7 (SPEC/
-; @desc    L4-SELFHOST.txt, раздел 5А).
+; @desc    на строки, чистка строки, первое слово, аргументы DB/DW парами)
+; @desc    и asmmnem.ubrk (таблица мнемоник, поиск кода, признак imm64).
+; @desc    Подшаг 3 (литералы и имена): use-включение asmlex.ubrk —
+; @desc    числовые формы, минус, диапазон, имена и скан строковых
+; @desc    литералов DS/DZ. Подшаг 4 (разбор строки в запись):
+; @desc    use-включение asmline.ubrk — каждая строка разбирается в запись
+; @desc    по порядку раздела 7 SPEC/L2-UASM.txt; ошибки разбора строки —
+; @desc    диагностика «uAsm: строка N: текст» (errhead, fail, failx)
+; @desc    и код 16; вывод подшага — листинг записей «N:V …» (reclist),
+; @desc    заменяемый проходами подшагов 5-6 (SPEC/L4-SELFHOST.txt,
+; @desc    раздел 5А).
 use asmmem.ubrk
 use asmwords.ubrk
 use asmmnem.ubrk
 use asmlex.ubrk
+use asmline.ubrk
 
 ; @method tbig ( -- addr )
 ; @in    нет
@@ -67,7 +70,7 @@ text tbig "вход слишком большой"
 ; @does  Печатает десятичное число (SPEC/L4-SELFHOST.txt, раздел 5А, как
 ; @does  printu дизассемблера): старшие разряды — рекурсивный вызов
 ; @does  с частным от UDIV 10, затем младший разряд — остаток UMOD 10
-; @does  + '0'; u = 0 даёт «0»; кирпич листинга и диагностики fail.
+; @does  + '0'; u = 0 даёт «0»; кирпич листинга и диагностики fail/failx.
 ; @depends UDIV, UMOD, ADD, EMIT, printu
 : printu
   DUP 10 UDIV SWAP 10 UMOD
@@ -96,8 +99,8 @@ var pl
 ; @in    a: слово — адрес первого байта слова
 ; @in    l: слово — число байтов слова
 ; @out   нет (байты слова выводятся в stdout, EMIT)
-; @does  Печатает l байтов с адреса a: слова листинга, аргументы
-; @does  (lexpstep) и остаток строк DS/DZ (dsline).
+; @does  Печатает l байтов с адреса a: слова листинга (recL/recC/recI),
+; @does  слово X диагностики failx.
 ; @depends pa, pl, pwstep
 : printw
   pl STORE64 pa STORE64
@@ -108,7 +111,7 @@ var pl
 ; @out   addr: слово — адрес строки «uAsm: строка » (UTF-8 + 0)
 ; @does  Данные: префикс диагностической строки ассемблера (SPEC/
 ; @does  L4-SELFHOST.txt, раздел 5А: «uAsm: строка N: текст»); печать —
-; @does  словом prints, номер строки — printu; кирпич fail.
+; @does  словом prints, номер строки — printu; кирпич errhead.
 text tuasm "uAsm: строка "
 
 ; @method targs ( -- addr )
@@ -119,166 +122,181 @@ text tuasm "uAsm: строка "
 ; @does  строке); печать — fail.
 text targs "слишком много аргументов"
 
+; @method errhead ( -- )
+; @in    нет (клетка ln — номер текущей строки)
+; @out   нет (префикс выводится в stdout, EMIT)
+; @does  Печатает префикс диагностической строки «uAsm: строка N: »
+; @does  (tuasm, номер строки ln — printu, двоеточие и пробел; SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А); кирпичи fail и failx.
+; @depends tuasm, ln, printu, EMIT, space, prints
+: errhead
+  tuasm prints
+  ln LOAD64 printu
+  58 EMIT space ;
+
 ; @method fail ( a -- )
 ; @in    a: слово — адрес текста ошибки (Z-строка)
 ; @out   нет; не возвращается: строка выводится в stdout, затем программа
 ; @out   завершается кодом 16
-; @does  Диагностика ошибки входа (SPEC/L4-SELFHOST.txt, раздел 5А):
-; @does  печатает «uAsm: строка N: » (tuasm, номер строки ln, printu,
-; @does  двоеточие и пробел), текст ошибки (prints), перевод строки
-; @does  и завершает программу словом QUIT (HALT 16); образ при ошибке
+; @does  Диагностика ошибки входа без слова X (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А): errhead, текст ошибки (prints), перевод строки
+; @does  и завершение словом QUIT (HALT 16); образ при ошибке
 ; @does  не выводится.
-; @depends tuasm, ln, printu, EMIT, space, prints, cr, QUIT
+; @depends errhead, prints, cr, QUIT
 : fail
-  tuasm prints
-  ln LOAD64 printu
-  58 EMIT space
-  prints cr QUIT ;
+  errhead prints cr QUIT ;
 
-; Клетка печати аргументов: ai — индекс следующей пары буфера аргументов.
-var ai
+; @method failx ( a l t -- )
+; @in    a: слово — адрес первого байта слова X сообщения
+; @in    l: слово — число байтов слова X
+; @in    t: слово — адрес текста ошибки с местом для X в конце (Z-строка)
+; @out   нет; не возвращается: строка выводится в stdout, затем программа
+; @out   завершается кодом 16
+; @does  Диагностика ошибки входа со словом X (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А; тексты ошибок с X — SPEC/L2-UASM.txt, раздел 7):
+; @does  errhead, текст ошибки (prints), слово X (printw), перевод
+; @does  строки и завершение словом QUIT (HALT 16); образ при ошибке
+; @does  не выводится.
+; @depends errhead, printw, prints, cr, QUIT
+: failx
+  errhead prints printw cr QUIT ;
 
-; @method isdsdz ( -- ф )
-; @in    нет (клетки wa, wl — первое слово строки)
-; @out   ф: слово — 1: первое слово — директива DS или DZ; 0: иначе
-; @does  Признак строки директивы данных DS/DZ (SPEC/L2-UASM.txt,
-; @does  раздел 6): слово из двух байтов — «D» (68) и «S» (83) либо «Z»
-; @does  (90); роль слова определяет позиция в строке (раздел 3), имя
-; @does  метки «DS:» директивой не считается; директива берёт остаток
-; @does  строки целиком — строковый литерал, а не слова-аргументы;
-; @does  кирпичи doline и listline.
-; @depends wa, wl, EQ, not, LOAD8, LOAD64, ADD, DUP, DROP, IF, EXIT, THEN
-: isdsdz
-  wl LOAD64 2 EQ not IF 0 EXIT THEN
-  wa LOAD64 LOAD8 68 EQ not IF 0 EXIT THEN
-  wa LOAD64 1 ADD LOAD8 DUP 83 EQ IF DROP 1 EXIT THEN
-  90 EQ ;
-
-; @method lexmark ( a l -- )
-; @in    a: слово — адрес первого байта слова-аргумента
-; @in    l: слово — число байтов слова-аргумента
-; @out   нет (пометка выводится в stdout, EMIT/printu)
-; @does  Печатает лексическую пометку слова-аргумента (листинг подшага 3):
-; @does  числовой литерал — «#» и значение по модулю 2^64 (numlit, lexv,
-; @does  printu), цифры верны, но вне диапазона -2^63..2^64-1 — «!» (33),
-; @does  имя — «*» (42), прочее — «?» (63); классификация — эталон
-; @does  tools/uasm_lex.py (parse_number, in_literal_range, is_name).
-; @depends numlit, isname, lexv, printu, EMIT, LOAD64, EQ, DUP, DROP,
-; @depends OVER, IF, ELSE, THEN
-: lexmark
-  OVER OVER numlit DUP
-  IF
-    DUP 1 EQ
-    IF DROP DROP DROP 35 EMIT lexv LOAD64 printu
-    ELSE DROP DROP DROP 33 EMIT
-    THEN
-  ELSE
-    DROP
-    isname IF 42 EMIT ELSE 63 EMIT THEN
-  THEN ;
-
-; @method lexpstep ( -- done )
-; @in    нет (клетки ai, argc — состояние печати; буфер аргументов)
-; @out   done: слово — 0: аргумент с пометкой выведен; 1: аргументов
-; @out   больше нет
-; @does  Один шаг печати аргументов с пометками (листинг подшага 3):
-; @does  пара ai лежит по адресу argbase + ai * 16 — адрес слова (LOAD64)
-; @does  и длина (LOAD64 с адреса пары + 8); перед аргументом — пробел,
-; @does  за ним — слово (printw) и пометка (lexmark); кирпич lexlist.
-; @depends ai, argc, argbase, LTU, not, MUL, ADD, LOAD64, space, printw,
-; @depends lexmark, STORE64, IF, EXIT, THEN
-: lexpstep
-  ai LOAD64 argc LOAD64 LTU not IF 1 EXIT THEN
-  space
-  ai LOAD64 16 MUL argbase ADD DUP LOAD64 SWAP 8 ADD LOAD64
-  OVER OVER printw
-  lexmark
-  ai LOAD64 1 ADD ai STORE64
-  0 ;
-
-; @method lexlist ( -- )
-; @in    нет (клетка argc и буфер аргументов — аргументы строки)
-; @out   нет (аргументы с пометками выводятся в stdout)
-; @does  Печатает аргументы строки с лексическими пометками (листинг
-; @does  подшага 3): пары буфера аргументов по порядку, перед каждым —
-; @does  пробел, за каждым — пометка lexmark; кирпич listline.
-; @depends ai, lexpstep
-: lexlist
-  0 ai STORE64
-  BEGIN lexpstep UNTIL ;
-
-; @method dsline ( -- )
-; @in    нет (клетки ra, rl — остаток строки после DS/DZ)
-; @out   нет (остаток и пометка выводятся в stdout)
-; @does  Печатает литерал директивы DS/DZ (листинг подшага 3): остаток
-; @does  строки целиком (printw — пробелы внутри литерала значимы,
-; @does  SPEC/L2-UASM.txt, раздел 2; буфер аргументов для DS/DZ не
-; @does  заполняется), затем скан parsestr — «#» и длина декодированных
-; @does  байтов (sl, printu) либо «!» (33) при ошибке; кирпич listline.
-; @depends ra, rl, parsestr, sl, printw, printu, space, EMIT, LOAD64,
-; @depends OVER, DUP, DROP, IF, ELSE, THEN
-: dsline
-  space
-  ra LOAD64 rl LOAD64
-  OVER OVER printw
-  OVER OVER parsestr
-  IF DROP DROP 35 EMIT sl LOAD64 printu
-  ELSE DROP DROP 33 EMIT
-  THEN ;
-
-; @method listline ( -- )
-; @in    нет (клетки ln, wa, wl, argc, ra, rl и буфер аргументов — строка)
+; @method recl ( -- )
+; @in    нет (клетки ln, rk, rn, wa — запись-метка)
 ; @out   нет (строка листинга выводится в stdout)
-; @does  Промежуточное поведение подшагов 2-3 (SPEC/L4-SELFHOST.txt,
-; @does  раздел 5А; заменяется разбором строки в запись в подшаге 4):
-; @does  печатает строку листинга «N:слово[=код] …» — номер строки
-; @does  (printu), двоеточие, первое слово (printw), код мнемоники
-; @does  после «=» (mnem, printu); дальше DS/DZ — остаток строки
-; @does  целиком со сканом литерала (dsline), иначе — аргументы
-; @does  с лексическими пометками (lexlist); перевод строки в конце;
-; @does  пустые строки и комментарии молчат (их отсеивает doline).
-; @depends ln, printu, wa, wl, printw, mnem, isdsdz, dsline, lexlist, cr,
-; @depends EMIT
-: listline
-  ln LOAD64 printu
-  58 EMIT
-  wa LOAD64 wl LOAD64 printw
-  mnem IF 61 EMIT printu THEN
-  isdsdz IF dsline ELSE lexlist THEN
+; @does  Печатает строку записи-метки (листинг подшага 4, заменяется
+; @does  проходом 1): «N:L имя» — номер, вид L, имя метки [wa, rn)
+; @does  (printw); кирпич reclist.
+; @depends ln, rk, rn, wa, printu, printw, EMIT, space, cr
+: recl
+  ln LOAD64 printu 58 EMIT 76 EMIT space
+  wa LOAD64 rn LOAD64 printw cr ;
+
+; @method recc ( -- )
+; @in    нет (клетки ln, rk, rn, wa, rv — запись-константа)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Печатает строку записи-константы (листинг подшага 4): «N:C
+; @does  имя=значение» — имя [wa, rn), значение по модулю 2^64
+; @does  (printu); кирпич reclist.
+; @depends ln, rk, rn, wa, rv, printu, printw, EMIT, space, cr
+: recc
+  ln LOAD64 printu 58 EMIT 67 EMIT space
+  wa LOAD64 rn LOAD64 printw 61 EMIT
+  rv LOAD64 printu cr ;
+
+; @method reci ( -- )
+; @in    нет (клетки ln, rk, rc, ra, rl — запись-инструкция)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Печатает строку записи-инструкции (листинг подшага 4): «N:I
+; @does  код [операнд]» — код мнемоники (printu), операнд ra/rl —
+; @does  текстом (printw), если он есть; у инструкции без imm64
+; @does  операнда нет (doinstr); кирпич reclist.
+; @depends ln, rk, rc, ra, rl, printu, printw, EMIT, space, cr, NEQ, IF,
+; @depends THEN
+: reci
+  ln LOAD64 printu 58 EMIT 73 EMIT space
+  rc LOAD64 printu
+  rl LOAD64 0 NEQ IF space ra LOAD64 rl LOAD64 printw THEN
   cr ;
+
+; @method recb ( -- )
+; @in    нет (клетки ln, rk, argc — запись директивы DB)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Печатает строку записи DB (листинг подшага 4): «N:DB argc» —
+; @does  число аргументов (значения подставит проход 2); кирпич reclist.
+; @depends ln, rk, argc, printu, EMIT, space, cr
+: recb
+  ln LOAD64 printu 58 EMIT 68 EMIT 66 EMIT space
+  argc LOAD64 printu cr ;
+
+; @method recw ( -- )
+; @in    нет (клетки ln, rk, argc — запись директивы DW)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Печатает строку записи DW (листинг подшага 4): «N:DW argc»
+; @does  (recb для DB); кирпич reclist.
+; @depends ln, rk, argc, printu, EMIT, space, cr
+: recw
+  ln LOAD64 printu 58 EMIT 68 EMIT 87 EMIT space
+  argc LOAD64 printu cr ;
+
+; @method recs ( -- )
+; @in    нет (клетки ln, rk, sl — запись директивы DS)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Печатает строку записи DS (листинг подшага 4): «N:DS длина» —
+; @does  длина декодированных байтов литерала (parsestr); кирпич reclist.
+; @depends ln, rk, sl, printu, EMIT, space, cr
+: recs
+  ln LOAD64 printu 58 EMIT 68 EMIT 83 EMIT space
+  sl LOAD64 printu cr ;
+
+; @method recz ( -- )
+; @in    нет (клетки ln, rk, sl — запись директивы DZ)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Печатает строку записи DZ (листинг подшага 4): «N:DZ длина» —
+; @does  длина декодированных байтов (байт 0 добавит кодирование,
+; @does  подшаг 6); кирпич reclist.
+; @depends ln, rk, sl, printu, EMIT, space, cr
+: recz
+  ln LOAD64 printu 58 EMIT 68 EMIT 90 EMIT space
+  sl LOAD64 printu cr ;
+
+; @method reclist ( -- )
+; @in    нет (клетки записи — rk и данные вида)
+; @out   нет (строка листинга выводится в stdout)
+; @does  Печатает строку листинга записи (промежуточный вывод подшага 4,
+; @does  SPEC/L4-SELFHOST.txt, раздел 5А; заменяется проходами подшагов
+; @does  5-6): rk выбирает кирпич печати — 1 метка (recl), 2 константа
+; @does  (recc), 3 инструкция (reci), 4 DB (recb), 5 DW (recw), 6 DS
+; @does  (recs), 7 DZ (recz); rk = 0 — пустая строка, тишина (её
+; @does  отсеивает doline).
+; @depends rk, recl, recc, reci, recb, recw, recs, recz, EQ, DUP, DROP,
+; @depends IF, EXIT, THEN
+: reclist
+  rk LOAD64
+  DUP 1 EQ IF DROP recl EXIT THEN
+  DUP 2 EQ IF DROP recc EXIT THEN
+  DUP 3 EQ IF DROP reci EXIT THEN
+  DUP 4 EQ IF DROP recb EXIT THEN
+  DUP 5 EQ IF DROP recw EXIT THEN
+  DUP 6 EQ IF DROP recs EXIT THEN
+  DUP 7 EQ IF DROP recz EXIT THEN
+  DROP ;
 
 ; @method doline ( s q -- )
 ; @in    s: слово — адрес первого байта строки буфера
 ; @in    q: слово — адрес за последним байтом строки (на LF либо be)
-; @out   нет (строка обрабатывается; вывод подшага 3 — listline)
+; @out   нет (строка обрабатывается; вывод подшага 4 — reclist)
 ; @does  Обрабатывает одну строку (SPEC/L4-SELFHOST.txt, раздел 5А):
 ; @does  снимает концевые CR (crstep), отрезает комментарий «;» вне
 ; @does  кавычек (findsemi), снимает крайние пробелы и табуляции
 ; @does  (rtrim, ltrim); пустая строка или комментарий — тишина; иначе
-; @does  splitword (первое слово и остаток); буфер аргументов заполняется
-; @does  только для не DS/DZ строк (isdsdz: литерал DS/DZ берёт остаток
-; @does  целиком, SPEC/L2-UASM.txt, раздел 6), затем listline. Подшаг 4
-; @does  заменит listline разбором строки в запись.
-; @depends crstep, findsemi, rtrim, ltrim, LTU, not, splitword, isdsdz,
-; @depends splitargs, listline
+; @does  splitword (первое слово и остаток), директива DB/DW — splitargs
+; @does  (аргументы парами в буфер аргументов: лимит 256 пар — только
+; @does  аргументы DB/DW, SPEC/L4-SELFHOST.txt, раздел 5А; операнд
+; @does  инструкции и литерал DS/DZ — текст ra/rl, не слова-аргументы),
+; @does  parseline (запись) и reclist (листинг подшага; проходы 1-2 —
+; @does  подшаги 5-6).
+; @depends crstep, findsemi, rtrim, ltrim, splitword, isdbdw, splitargs,
+; @depends parseline, reclist, LTU, not
 : doline
   BEGIN crstep UNTIL
   findsemi
   rtrim ltrim
   OVER OVER LTU not IF DROP DROP EXIT THEN
   splitword
-  isdsdz not IF splitargs THEN
-  listline ;
+  isdbdw IF splitargs THEN
+  parseline reclist ;
 
 ; @method main ( -- )
 ; @in    нет (вход инструмента — байты stdin, KEY)
-; @out   нет (выход подшага 3 — листинг строк в stdout, EMIT; код
+; @out   нет (выход подшага 4 — листинг записей в stdout, EMIT; код
 ; @out   завершения 0 — успех, 16 — ошибка входа)
 ; @does  Каркас ассемблера (SPEC/L4-SELFHOST.txt, раздел 5А): читает
 ; @does  stdin целиком в буфер источника (readstep, конец — в be), ставит
 ; @does  bp на начало буфера и ln = 1, проходит строки (linestep
 ; @does  до конца) и завершается BYE; пустой вход — пустой вывод.
-; @does  Разбор в записи и сборка образа — подшаги 4-6.
+; @does  Каждый шаг — doline: разбор строки в запись и листинг
+; @does  (подшаг 4); таблица символов и проходы 1-2 — подшаги 5-6.
 ; @depends srcbase, readstep, be, bp, ln, linestep, BYE
 : main
   srcbase
