@@ -9,7 +9,8 @@
 ; @desc    (SPEC/L4-SELFHOST.txt, раздел 5); запись — восемь байтов:
 ; @desc    мнемоника, дополненная нулями; слово mnem ищет код первого
 ; @desc    слова строки сравнением с записями строк: код = низ диапазона
-; @desc    + номер записи.
+; @desc    + номер записи; слово hasimm — признак поля imm64 опкода
+; @desc    (подшаг 4).
 
 ; Таблицы мнемоник (SPEC/L4-SELFHOST.txt, раздел 5А): шесть строк по
 ; диапазонам кодов; запись кода c строки с базой B и низом L — по адресу
@@ -140,8 +141,8 @@ var rcount
 ; @does  шесть строк таблицы по диапазонам — 0x00-0x07 (tstm),
 ; @does  0x10-0x13 (tmem), 0x20-0x2C (tari), 0x30-0x35 (tcmp),
 ; @does  0x40-0x45 (tjmp), 0x50 (tsys); директивы DB/DW/DS/DZ — не
-; @does  опкоды, их разбирает запись строки (подшаг 4); кирпич listline
-; @does  и разбора строки в запись.
+; @does  опкоды, их разбирает запись строки (asmline.ubrk, подшаг 4);
+; @does  кирпич parseline.
 ; @depends tstm, tmem, tari, tcmp, tjmp, tsys, rangematch, DUP, IF
 : mnem
   tstm 0x00 8 rangematch DUP IF EXIT THEN DROP
@@ -151,3 +152,21 @@ var rcount
   tjmp 0x40 6 rangematch DUP IF EXIT THEN DROP
   tsys 0x50 1 rangematch DUP IF EXIT THEN DROP
   0 ;
+
+; @method hasimm ( code -- flag )
+; @in    code: слово — опкод 0..255
+; @out   flag: слово — 1, если за опкодом следует поле imm64, иначе 0
+; @does  Признак поля imm64 без таблицы (SPEC/L4-SELFHOST.txt, раздел
+; @does  5А: как hasimm дизассемблера, раздел 5): сравнения и диапазоны —
+; @does  коды 0x01, 0x07, 0x40-0x43, 0x45, 0x50 (PUSH, PICK, JMP, JZ,
+; @does  JNZ, CALL, HALT, SYS — SPEC/L2-UASM.txt, раздел 5); кирпич
+; @does  разбора инструкции (asmline.ubrk, подшаг 4).
+; @depends EQ, LTU, LEU, DUP, DROP, IF, EXIT, THEN
+: hasimm
+  DUP 0x01 EQ IF DROP 1 EXIT THEN
+  DUP 0x07 EQ IF DROP 1 EXIT THEN
+  DUP 0x40 LTU IF DROP 0 EXIT THEN
+  DUP 0x43 LEU IF DROP 1 EXIT THEN
+  DUP 0x45 EQ IF DROP 1 EXIT THEN
+  DUP 0x50 EQ IF DROP 1 EXIT THEN
+  DROP 0 ;
