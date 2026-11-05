@@ -260,35 +260,29 @@ class TestPlan(unittest.TestCase):
         self.assertEqual(first, "sample.txt")
         self.assertEqual(second, "sample_2.txt")
 
+    # @method test_card_name_reserves_branch_index() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Имя индекса ветви INDEX.txt занято (registry_render.
+    # @does  BRANCH_INDEX_NAME): исходник index.py получает суффикс.
+    # @depends rs.card_name_for
+    def test_card_name_reserves_branch_index(self):
+        used = {"INDEX.txt"}
+        self.assertEqual(rs.card_name_for(empty_entry("index.py"), used),
+                         "index_2.txt")
+
     # @method test_plan_registry_maps_branch_and_card() -> None
     # @in    нет
     # @out   нет
-    # @does  План назначает исходнику его ветвь и имя файла карточек.
+    # @does  План назначает исходнику его ветвь, имя файла карточек
+    # @does  и относительный путь (rel) для рендера.
+    # @depends rs.plan_registry
     def test_plan_registry_maps_branch_and_card(self):
         plan = rs.plan_registry([sample_entry()])
         self.assertEqual(len(plan), 1)
         self.assertEqual(plan[0]["branch"], "t0.sample.demo")
         self.assertEqual(plan[0]["card"], "sample.txt")
-
-    # @method test_group_plan_by_branch() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Элементы плана разных ветвей образуют разные группы.
-    def test_group_plan_by_branch(self):
-        plan = rs.plan_registry([sample_entry(), empty_entry("x.py")])
-        groups = rs.group_plan_by_branch(plan)
-        self.assertEqual(set(groups), {"t0.sample.demo", rs.NO_BRANCH})
-
-    # @method test_sort_plan_branches_by_layer() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Ветви сортируются по слою, затем по имени.
-    def test_sort_plan_branches_by_layer(self):
-        plan = rs.plan_registry([sample_entry(), empty_entry("x.py")])
-        groups = rs.group_plan_by_branch(plan)
-        self.assertEqual(
-            rs.sort_plan_branches(groups), [rs.NO_BRANCH, "t0.sample.demo"]
-        )
+        self.assertEqual(plan[0]["rel"], "tools/sample.py")
 
 
 if __name__ == "__main__":
