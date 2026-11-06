@@ -27,7 +27,8 @@
 - tools/uvm_ops_sys.py — методов: 3
   карточки: registry/t0.uvm.ops/uvm_ops_sys.txt
   описание: Обработчик опкода SYS и мост к узлу-хосту: SYS 0 — чтение
-            байта, SYS 1 — вывод байта (SPEC/L0-UVM.txt, раздел 6).
+            байта, SYS 1 — вывод байта, SYS 2 — завершение с кодом со
+            стека (SPEC/L0-UVM.txt, раздел 6).
 - tests/test_uvm_ops_arith.py — методов: 20
   карточки: registry/t0.uvm.ops/test_uvm_ops_arith.txt
   описание: Тесты арифметических и побитовых обработчиков: ADD, SUB,
@@ -49,7 +50,8 @@
   карточки: registry/t0.uvm.ops/test_uvm_ops_stack.txt
   описание: Тесты стековых обработчиков: NOP, PUSH, DROP, DUP, SWAP,
             OVER, ROT, PICK (SPEC/L0-UVM.txt, раздел 5).
-- tests/test_uvm_ops_sys.py — методов: 7
+- tests/test_uvm_ops_sys.py — методов: 10
   карточки: registry/t0.uvm.ops/test_uvm_ops_sys.txt
   описание: Тесты системных вызовов: SYS 0 — чтение байта, SYS 1 — вывод
-            байта, неизвестный SYS (SPEC/L0-UVM.txt, раздел 6).
+            байта, SYS 2 — завершение с кодом со стека, неизвестный SYS
+            (SPEC/L0-UVM.txt, раздел 6).

@@ -5,7 +5,7 @@
 
 - tools/ubrick_dict.py — методов: 8
   карточки: registry/t0.ubrick.dict/ubrick_dict.txt
-  описание: Словарь uBrick v0.4: примитивы и псевдонимы (имя -> одна
+  описание: Словарь uBrick v0.5: примитивы и псевдонимы (имя -> одна
             инструкция uAsm), производные слова с телами словами uBrick
             и управляющие конструкции (SPEC/L3-UBRICK.txt, разделы 4-5).
 - tests/test_ubrick_dict.py — методов: 32

@@ -76,7 +76,7 @@
 ВЕТВЬ t0.uvm.integration [слой T0] — файлов: 1, методов: 9
   индекс: registry/t0.uvm.integration/INDEX.txt
 
-ВЕТВЬ t0.uvm.ops [слой T0] — файлов: 12, методов: 113
+ВЕТВЬ t0.uvm.ops [слой T0] — файлов: 12, методов: 116
   индекс: registry/t0.uvm.ops/INDEX.txt
 
 ВЕТВЬ t0.uvm.run [слой T0] — файлов: 2, методов: 15
@@ -86,4 +86,4 @@
   индекс: registry/t0.uvm.table/INDEX.txt
 
 ВСЕГО ВЕТВЕЙ: 27
-ВСЕГО МЕТОДОВ: 1175
+ВСЕГО МЕТОДОВ: 1178
