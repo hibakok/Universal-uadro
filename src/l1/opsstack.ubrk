@@ -1,0 +1,17 @@
+; @uadro
+; @file    src/l1/opsstack.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — обработчики группы «стек» 0x00-0x07 (SPEC/
+; @desc    L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
+; @desc    подшаг 2 — NOP; PUSH, DROP, DUP, SWAP, OVER, ROT, PICK —
+; @desc    подшаг 3 (стеки гостя, кирпичи mem.ubrk).
+
+; @method nop ( -- )
+; @in    нет (клетка gpc уже переведена декодером за инструкцию)
+; @out   нет
+; @does  Обработчик NOP 0x00 (SPEC/L0-UVM.txt, раздел 5: эффект
+; @does  ( — ), ничего не делать): тело пусто — следующий адрес уже
+; @does  в gpc (decode, dec.ubrk); кирпич dstack (tab.ubrk).
+; @depends нет
+: nop ;
