@@ -20,8 +20,11 @@
 ; @desc    и код 16. Подшаг 5 (таблица символов и проход 1):
 ; @desc    use-включение asmsym.ubrk — запись и поиск имён; p1step
 ; @desc    определяет метки адресами и константы значениями, recsize
-; @desc    копит адрес; вывод подшага — листинг символов «имя=значение»
-; @desc    (symlist), заменяемый выводом образа подшагом 6 (SPEC/
+; @desc    копит адрес. Подшаг 6 (проход 2 и вывод образа): use-включение
+; @desc    asmcode.ubrk — p2step кодирует записи в буфер образа; клетка ps
+; @desc    выбирает шаг записи (p1step либо p2step), проход 2 повторно
+; @desc    проходит строки; imgout выводит байты [imgbase, vc) при успехе,
+; @desc    при ошибке образ не выводится — только диагностика (SPEC/
 ; @desc    L4-SELFHOST.txt, раздел 5А).
 use asmmem.ubrk
 use asmwords.ubrk
@@ -29,6 +32,7 @@ use asmmnem.ubrk
 use asmlex.ubrk
 use asmline.ubrk
 use asmsym.ubrk
+use asmcode.ubrk
 
 ; @method tbig ( -- addr )
 ; @in    нет
@@ -74,7 +78,7 @@ text tbig "вход слишком большой"
 ; @does  Печатает десятичное число (SPEC/L4-SELFHOST.txt, раздел 5А, как
 ; @does  printu дизассемблера): старшие разряды — рекурсивный вызов
 ; @does  с частным от UDIV 10, затем младший разряд — остаток UMOD 10
-; @does  + '0'; u = 0 даёт «0»; кирпич листинга и диагностики fail/failx.
+; @does  + '0'; u = 0 даёт «0»; кирпич диагностики errhead.
 ; @depends UDIV, UMOD, ADD, EMIT, printu
 : printu
   DUP 10 UDIV SWAP 10 UMOD
@@ -168,6 +172,11 @@ text targs "слишком много аргументов"
 ; метка получает его значением — SPEC/L2-UASM.txt, разделы 3 и 7).
 var va
 
+; Клетка выбора прохода: ps — 0: doline заканчивается p1step (проход 1 —
+; таблица символов и адреса), 1: p2step (проход 2 — кодирование записи
+; в буфер образа); ставится словом main перед каждым проходом.
+var ps
+
 ; @method p1addr ( -- )
 ; @in    нет
 ; @out   нет; va = 0, таблица символов пуста
@@ -206,8 +215,8 @@ var va
 ; @does  pass1 эталона): метка (rk = 1) — символ со значением va (адрес
 ; @does  следующей записи; метка в конце текста получит адрес конца
 ; @does  образа); константа (rk = 2) — символ со значением rv; иная
-; @does  запись — va растёт на recsize; ошибки symdef и разбора
-; @does  прекращают проход (fail/failx, код 16); кирпич doline.
+; @does  запись — va растёт на recsize; ошибки symdef прекращают проход
+; @does  (fail/failx, код 16); кирпич doline.
 ; @depends rk, rn, wa, rv, va, symdef, recsize, EQ, DUP, DROP, IF, EXIT,
 ; @depends THEN, ADD, STORE64, LOAD64
 : p1step
@@ -217,40 +226,11 @@ var va
   DROP
   recsize va LOAD64 ADD va STORE64 ;
 
-; @method symlstep ( -- done )
-; @in    нет (клетка kr — адрес текущей записи листинга)
-; @out   done: слово — 0: запись напечатана, листинг продолжается; 1:
-; @out   записей больше нет (kr достиг sc)
-; @does  Один шаг листинга символов (промежуточный вывод подшага 5,
-; @does  SPEC/L4-SELFHOST.txt, раздел 5А; заменяется выводом образа
-; @does  подшагом 6): строка «имя=значение» — имя записи печатается
-; @does  с адреса kr + 8 (Z-строка, prints), значение — loadle и
-; @does  printu; symnext продвигает kr на следующую запись; кирпич
-; @does  symlist.
-; @depends kr, sc, symnext, loadle, printu, prints, EMIT, cr, GEU, ADD,
-; @depends LOAD64, IF, EXIT, THEN
-: symlstep
-  kr LOAD64 sc LOAD64 GEU IF 1 EXIT THEN
-  kr LOAD64 8 ADD prints 61 EMIT
-  kr LOAD64 loadle printu cr
-  symnext 0 ;
-
-; @method symlist ( -- )
-; @in    нет (таблица символов заполнена проходом 1)
-; @out   нет (листинг выводится в stdout, EMIT)
-; @does  Печатает таблицу символов прохода 1 по записям от symbase до
-; @does  sc — по строке «имя=значение» на запись, в порядке определения
-; @does  (промежуточный вывод подшага 5, заменяется выводом образа
-; @does  подшагом 6); кирпич main.
-; @depends kr, symbase, symlstep
-: symlist
-  symbase kr STORE64
-  BEGIN symlstep UNTIL ;
-
 ; @method doline ( s q -- )
 ; @in    s: слово — адрес первого байта строки буфера
 ; @in    q: слово — адрес за последним байтом строки (на LF либо be)
-; @out   нет (строка обрабатывается; шаг прохода 1 — p1step)
+; @out   нет (строка обрабатывается; шаг записи выбирает клетка ps:
+; @out   p1step либо p2step)
 ; @does  Обрабатывает одну строку (SPEC/L4-SELFHOST.txt, раздел 5А):
 ; @does  снимает концевые CR (crstep), отрезает комментарий «;» вне
 ; @does  кавычек (findsemi), снимает крайние пробелы и табуляции
@@ -259,10 +239,13 @@ var va
 ; @does  (аргументы парами в буфер аргументов: лимит 256 пар — только
 ; @does  аргументы DB/DW, SPEC/L4-SELFHOST.txt, раздел 5А; операнд
 ; @does  инструкции и литерал DS/DZ — текст ra/rl, не слова-аргументы),
-; @does  parseline (запись) и p1step (проход 1: метки и константы —
-; @does  символы, адрес записи — va; проход 2 — подшаг 6).
+; @does  parseline (запись) и шаг записи: ps = 0 — p1step (проход 1:
+; @does  метки и константы — символы, адрес записи — va), ps = 1 —
+; @does  p2step (проход 2: кодирование записи в буфер образа,
+; @does  asmcode.ubrk); проход 2 повторно разбирает те же строки —
+; @does  ошибки разбора там невозможны, ошибки значений решает p2step.
 ; @depends crstep, findsemi, rtrim, ltrim, splitword, isdbdw, splitargs,
-; @depends parseline, p1step, LTU, not
+; @depends parseline, ps, p1step, p2step, LTU, not, IF, THEN, LOAD64
 : doline
   BEGIN crstep UNTIL
   findsemi
@@ -270,28 +253,66 @@ var va
   OVER OVER LTU not IF DROP DROP EXIT THEN
   splitword
   isdbdw IF splitargs THEN
-  parseline p1step ;
+  parseline
+  ps LOAD64 IF p2step ELSE p1step THEN ;
+
+; Клетка вывода образа: oa — адрес следующего байта вывода (outstep).
+var oa
+
+; @method outstep ( -- done )
+; @in    нет (клетки oa, vc — состояние вывода)
+; @out   done: слово — 0: байт образа выведен, вывод продолжается; 1:
+; @out   байтов образа больше нет (oa достиг vc)
+; @does  Один шаг вывода образа (SPEC/L4-SELFHOST.txt, раздел 5А):
+; @does  байт по адресу oa — EMIT, oa растёт; кирпич imgout.
+; @depends oa, vc, GEU, LOAD8, EMIT, ADD, STORE64, LOAD64, IF, EXIT, THEN
+: outstep
+  oa LOAD64 vc LOAD64 GEU IF 1 EXIT THEN
+  oa LOAD64 LOAD8 EMIT
+  oa LOAD64 1 ADD oa STORE64
+  0 ;
+
+; @method imgout ( -- )
+; @in    нет (буфер образа заполнен проходом 2 — байты [imgbase, vc))
+; @out   нет (байты образа выводятся в stdout, EMIT)
+; @does  Выводит собранный образ (SPEC/L4-SELFHOST.txt, раздел 5А: выход —
+; @does  образ целиком из буфера образа при успехе); пустой образ —
+; @does  пустой вывод; кирпич main.
+; @depends oa, imgbase, outstep, STORE64, BEGIN, UNTIL
+: imgout
+  imgbase oa STORE64
+  BEGIN outstep UNTIL ;
 
 ; @method main ( -- )
 ; @in    нет (вход инструмента — байты stdin, KEY)
-; @out   нет (выход подшага 5 — листинг символов в stdout, EMIT; код
-; @out   завершения 0 — успех, 16 — ошибка входа)
-; @does  Каркас ассемблера (SPEC/L4-SELFHOST.txt, раздел 5А): читает
-; @does  stdin целиком в буфер источника (readstep, конец — в be), ставит
-; @does  bp на начало буфера и ln = 1, готовит проход 1 (p1addr: va = 0,
-; @does  пустая таблица), проходит строки (linestep до конца; каждый
-; @does  шаг — doline: разбор строки в запись и p1step), печатает
-; @does  таблицу символов (symlist) и завершается BYE; пустой вход —
-; @does  пустой вывод; при ошибке прохода листинг не печатается — только
-; @does  диагностика (fail/failx); проход 2 и вывод образа — подшаг 6.
-; @depends srcbase, readstep, be, bp, ln, p1addr, linestep, symlist, BYE
+; @out   нет (выход — образ UVM в stdout, EMIT; код завершения 0 —
+; @out   успех, 16 — ошибка входа)
+; @does  Ассемблер uAsm (SPEC/L4-SELFHOST.txt, раздел 5А; SPEC/
+; @does  L2-UASM.txt, раздел 7): читает stdin целиком в буфер источника
+; @does  (readstep, конец — be); проход 1 (ps = 0): p1addr (va = 0,
+; @does  пустая таблица символов), строки — linestep/doline, каждая
+; @does  запись — p1step (метки и константы — символы, адрес записи —
+; @does  va); проход 2 (ps = 1): курсор образа vc — imgbase, строки
+; @does  проходят повторно, каждая запись — p2step (кодирование в буфер
+; @does  образа, значения имён — из таблицы прохода 1); успех — imgout
+; @does  (байты [imgbase, vc)) и BYE; пустой вход — пустой образ; ошибка
+; @does  любого прохода — диагностика fail/failx и код 16, образ
+; @does  не выводится.
+; @depends srcbase, readstep, be, ps, bp, ln, p1addr, linestep, vc,
+; @depends imgbase, imgout, BYE, STORE64, BEGIN, UNTIL, LOAD64
 : main
   srcbase
   BEGIN readstep UNTIL
   be STORE64
+  0 ps STORE64
   srcbase bp STORE64
   1 ln STORE64
   p1addr
   BEGIN linestep UNTIL
-  symlist
+  1 ps STORE64
+  srcbase bp STORE64
+  1 ln STORE64
+  imgbase vc STORE64
+  BEGIN linestep UNTIL
+  imgout
   BYE ;
