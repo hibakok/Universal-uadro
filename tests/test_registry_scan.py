@@ -3,19 +3,27 @@
 # @layer   T0
 # @branch  t0.infra.registry
 # @desc    Тесты генератора реестра: разбор аннотаций «# @» и «; @»,
-# @desc    план карточек по исходным файлам (рендер и диск —
+# @desc    план карточек по исходным файлам и страховка целостности
+# @desc    источников — карточка без @does и файл без концевого
+# @desc    перевода строки (признаки оборванного при переносе файла)
+# @desc    падают в main до генерации реестра (рендер и диск —
 # @desc    tests/test_registry_scan_render.py).
 
 """Тесты разбора и плана реестра (tools/registry_scan.py).
 
 Аннотации «# @...» — Python-исходники, «; @...» — исходники
 собственных языков .uasm/.ubrk (Этап 4, SPEC/L4-SELFHOST.txt).
-Рендер и работа с диском — tests/test_registry_scan_render.py.
+Страховка целостности (card_gaps, unfinished_sources, source_problems):
+оборванный при переносе файл ловится до генерации реестра — карточка
+без @does и отсутствие перевода строки в конце. Рендер и работа
+с диском — tests/test_registry_scan_render.py.
 
 Запуск из корня репозитория:
     python -m unittest discover -s tests -t . -v
 """
 
+import os
+import tempfile
 import unittest
 
 from tools import registry_scan as rs
@@ -223,6 +231,128 @@ class TestParseCards(unittest.TestCase):
     def test_lone_tags_ignored(self):
         cards = rs.parse_method_cards(["# @in потерян", "# @does потерян"])
         self.assertEqual(cards, [])
+
+
+# @method card_entry(name, lines) -> dict
+# @in    name: str — имя файла без каталога
+# @in    lines: list[str] — строки исходника
+# @out   entry: dict — элемент реестра с разобранными карточками
+# @does  Собирает элемент из строк без обращения к диску; кирпич тестов
+# @does  целостности источников (card_gaps).
+# @depends rs.parse_method_cards
+def card_entry(name, lines):
+    return {
+        "path": rs.ROOT / "tools" / name,
+        "header": {"file": "", "layer": "T0", "branch": "", "desc": []},
+        "cards": rs.parse_method_cards(lines),
+    }
+
+
+# @method entry_from_file(path) -> dict
+# @in    path: str — путь к существующему файлу
+# @out   entry: dict — элемент реестра с карточками из этого файла
+# @does  Читает файл и разбирает карточки без обращения к collect_sources;
+# @does  кирпич тестов целостности источников (card_gaps,
+# @does  unfinished_sources, source_problems).
+# @depends rs.parse_method_cards
+def entry_from_file(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+    return {
+        "path": type(rs.ROOT)(path),
+        "header": {"file": "", "layer": "T0", "branch": "", "desc": []},
+        "cards": rs.parse_method_cards(lines),
+    }
+
+
+class TestSourceIntegrity(unittest.TestCase):
+    """Страховка целостности: оборванные файлы видны до генерации."""
+
+    # @method test_full_card_passes() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Карточка с полем @does — не дыра: образец с двумя полными
+    # @does  карточками проходит страховку молча.
+    # @depends card_entry, rs.card_gaps, sample_lines
+    def test_full_card_passes(self):
+        self.assertEqual(rs.card_gaps([card_entry("ok.py", sample_lines())]),
+                         [])
+
+    # @method test_card_without_does_reported() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Карточка без @does — признак оборванного файла: сообщение
+    # @does  называет исходник и имя метода; полная карточка в том же
+    # @does  файле не мешает (обрыв ловится точечно).
+    # @depends card_entry, rs.card_gaps
+    def test_card_without_does_reported(self):
+        lines = [
+            "# @method whole(a) -> int",
+            "# @does  Целая карточка.",
+            "def whole(a):",
+            "    return a",
+            "# @method cut(b) -> int",
+            "# @in    b: int — число",
+        ]
+        problems = rs.card_gaps([card_entry("cut.py", lines)])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("cut.py", problems[0])
+        self.assertIn("cut(b) -> int", problems[0])
+
+    # @method test_semicolon_card_without_does_reported() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Страховка видит и исходники собственных языков: карточка
+    # @does  «; @method» без «; @does» (uAsm/uBrick) — дыра.
+    # @depends card_entry, rs.card_gaps
+    def test_semicolon_card_without_does_reported(self):
+        lines = ["; @method main ( -- )", "; @does  Целая.", "; @method cut"]
+        problems = rs.card_gaps([card_entry("cut.ubrk", lines)])
+        self.assertEqual(problems, ["карточка без @does: tools/cut.ubrk — "
+                                    "cut"])
+
+    # @method test_source_problems_joins_guards() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Кирпич main собирает обе страховки: один оборванный файл
+    # @does  без @does и без концевого перевода строки даёт два разных
+    # @does  сообщения.
+    # @depends entry_from_file, rs.source_problems
+    # @uses   tempfile — временный файл вне репозитория
+    def test_source_problems_joins_guards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cut = os.path.join(tmp, "cut.py")
+            with open(cut, "w", encoding="utf-8") as handle:
+                handle.write("# @method cut\n# @in    x: int")
+            problems = rs.source_problems([entry_from_file(cut)])
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(problems[0].startswith("карточка без @does:"))
+        self.assertTrue(problems[1].startswith("нет перевода строки"))
+
+    # @method test_unfinished_file_reported() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Файл без перевода строки в конце — обрыв последней строки:
+    # @does  сообщение называет путь; завершённый и пустой файлы
+    # @does  проходят молча.
+    # @depends entry_from_file, rs.unfinished_sources
+    # @uses   tempfile — временные файлы вне репозитория
+    def test_unfinished_file_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cut = os.path.join(tmp, "cut.py")
+            whole = os.path.join(tmp, "whole.py")
+            empty = os.path.join(tmp, "empty.py")
+            with open(cut, "w", encoding="utf-8") as handle:
+                handle.write("# обрыв на середине строки")
+            with open(whole, "w", encoding="utf-8") as handle:
+                handle.write("# завершён\n")
+            with open(empty, "w", encoding="utf-8") as handle:
+                handle.write("")
+            entries = [entry_from_file(p) for p in (cut, whole, empty)]
+            problems = rs.unfinished_sources(entries)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("cut.py", problems[0])
+        self.assertIn("нет перевода строки", problems[0])
 
 
 class TestPlan(unittest.TestCase):
