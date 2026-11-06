@@ -2,20 +2,22 @@
 # @file    tools/uvm_table.py
 # @layer   T0
 # @branch  t0.uvm.table
-# @desc    Таблица опкодов UVM v0.1: код, мнемоника, обработчик, признак imm64
-# @desc    (SPEC/L0-UVM.txt, раздел 5).
+# @desc    Таблица опкодов UVM: код, мнемоника, обработчик, признак imm64
+# @desc    40 записей — v0.1 + DEVRD/DEVWR v0.3 (SPEC/L0-UVM.txt, раздел 5).
 
-"""Таблица опкодов UVM v0.1 (ветвь t0.uvm.table).
+"""Таблица опкодов UVM (ветвь t0.uvm.table).
 
-Вся система команд на одном экране: 38 записей вида
+Вся система команд на одном экране: 40 записей вида
 (код, мнемоника, обработчик, признак imm64), сгруппированных по группам
-опкодов SPEC. Таблица — чистые данные: функции поиска не меняют состояние
+опкодов SPEC: 38 записей v0.1 и пара DEVRD/DEVWR v0.3 (Этап 5, раздел 6А.2).
+Таблица — чистые данные: функции поиска не меняют состояние
 машины. Неизвестный код или мнемоника дают None; ловушку 6 (неизвестный
-опкод) поднимает декодер — ветвь t0.uvm.decode, следующий шаг Этапа 1.
+опкод) поднимает декодер — ветвь t0.uvm.decode.
 """
 
 from tools import uvm_ops_arith as arith
 from tools import uvm_ops_cmp as cmp
+from tools import uvm_ops_dev as dev
 from tools import uvm_ops_jump as jump
 from tools import uvm_ops_mem as mem
 from tools import uvm_ops_stack as stack
@@ -78,9 +80,14 @@ GROUP_SYS = (
     (0x50, "SYS", sysops.op_sys, True),
 )
 
+GROUP_DEV = (
+    (0x52, "DEVRD", dev.op_devrd, False),
+    (0x53, "DEVWR", dev.op_devwr, False),
+)
+
 TABLE = (
     GROUP_STACK + GROUP_MEM + GROUP_ARITH + GROUP_CMP
-    + GROUP_JUMP + GROUP_SYS
+    + GROUP_JUMP + GROUP_SYS + GROUP_DEV
 )
 BY_CODE = {rec[0]: rec for rec in TABLE}
 BY_MNEMONIC = {rec[1]: rec for rec in TABLE}
