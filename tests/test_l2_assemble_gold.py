@@ -12,14 +12,15 @@
 # @desc    disasm на образах золотого набора дизассемблера собирается
 # @desc    обратно в исходный образ), ошибки входа — по одному тексту
 # @desc    на каждый вид раздела 7 SPEC/L2-UASM.txt и ошибки ёмкости
-# @desc    раздела 5А, вход сверх лимита без номера строки; страховка
-# @desc    полноты категорий — счётные проверки набора; TestProcess —
-# @desc    сквозной конвейер процессами: собственный ассемблер собирает
-# @desc    src/hello.uasm, собранный образ исполняется и печатает «Hi».
-# @desc    Переполнение таблицы символов прогоном не покрыто:
-# @desc    квадратичный поиск делает полный набор многократноминутным
-# @desc    (решение подшага 5, tests/test_l2_assemble_sym.py; SPEC v0.7,
-# @desc    раздел 6).
+# @desc    раздела 5А, страховка полноты категорий — счётные проверки
+# @desc    набора; TestProcess — сквозной конвейер процессами: собственный
+# @desc    ассемблер собирает src/hello.uasm, собранный образ исполняется
+# @desc    и печатает «Hi». Прогоном не покрыты (SPEC v0.9, раздел 6):
+# @desc    переполнение таблицы символов (квадратичный поиск — решение
+# @desc    подшага 5, tests/test_l2_assemble_sym.py) и границы буферов
+# @desc    источника и образа — полные 512/64 КиБ через эмулятор занимают
+# @desc    ~35 с, обе покрыты тестами подшагов (tests/test_l2_assemble.py
+# @desc    TestLimit, tests/test_l2_assemble_code.py TestImageLimit).
 
 """Золотой набор ассемблера l2.uasm.assemble (SPEC/L4-SELFHOST.txt,
 раздел 6; подшаг 7 раздела 5А — закрытие ветви).
@@ -37,11 +38,14 @@ ERRORS и DISASM_TEXTS — вывод эталона disasm на образах 
 литералы всех форм и имена; DS/DZ с escape; метки, константы, ссылки
 вперёд, метка в конце; программы этапов 1-2 — образы байт в байт
 с эталонными; 171 текст дизассемблера; ошибки входа — по одному тексту
-на каждый вид раздела 7 SPEC/L2-UASM.txt и ошибки ёмкости раздела 5А
-(«вход слишком большой» — без номера строки, «образ слишком большой» —
-строками DW, «слишком много аргументов», «слишком длинное имя»);
-переполнение таблицы символов прогоном не покрыто (квадратичный поиск —
-решение подшага 5, SPEC v0.7, раздел 6).
+на каждый вид раздела 7 SPEC/L2-UASM.txt; ошибки ёмкости раздела 5А:
+«слишком много аргументов» и «слишком длинное имя» с обеих сторон
+границы (256/257 аргументов, 63/64 байта имени — у эталона лимитов нет,
+ожидание явное). Прогоном не покрыты (SPEC v0.9, раздел 6): переполнение
+таблицы символов (квадратичный поиск — решение подшага 5) и границы
+буферов источника и образа — полные 512/64 КиБ занимают ~35 с, обе
+покрыты тестами подшагов (tests/test_l2_assemble.py TestLimit,
+tests/test_l2_assemble_code.py TestImageLimit).
 
 TestProcess — сквозной конвейер настоящими процессами: ubrick_cli
 compile собирает собственный ассемблер, uvm_cli исполняет его с входным
@@ -66,12 +70,8 @@ PROGRAMS = ("hello.uasm", "arith.uasm", "nested_calls.uasm")
 VALUES = (0, 1, 12345, 2 ** 64 - 1)            # золотые значения imm64
 IMM = [rec for rec in TABLE if rec[3]]         # опкоды с полем imm64
 NOIMM = [rec for rec in TABLE if not rec[3]]   # опкоды без поля
-SRC_LIMIT = 0x90000 - 0x10000                  # буфер источника: 512 КиБ
-BIG_LINE = "вход слишком большой\n"            # диагностика без номера
-IMG_TEXT = "образ слишком большой"             # лимит буфера образа
 ARGS_TEXT = "слишком много аргументов"         # лимит 256 пар аргументов
 NAME_TEXT = "слишком длинное имя"              # лимит имени 63 байта
-IMG_LINES = 32                                 # полные строки DW до отказа
 
 # Каждый вид записи отдельно (SPEC, раздел 6): все мнемоники — 30 без
 # imm64 одной строкой и 8 imm-опкодов с каждым золотым значением.
@@ -246,19 +246,6 @@ def golden_disasm(image, label, text, data):
     assert got == (0, data), (label, got, data)
 
 
-# @method image_overflow_text() -> bytes
-# @in    нет
-# @out   text: bytes — текст uAsm сверх лимита буфера образа
-# @does  Строит текст ошибки ёмкости «образ слишком большой» строками DW
-# @does  (SPEC, раздел 5А): 32 строки по 256 аргументов заполняют буфер
-# @does  образа 64 КиБ точно (32 * 256 * 8 = 65536), 33-я строка DW 1
-# @does  не помещается — диагностика со строкой 33; кирпич
-# @does  test_image_over_limit.
-def image_overflow_text():
-    line = "DW" + " 1" * 256
-    return ("\n".join([line] * IMG_LINES) + "\nDW 1\n").encode("utf-8")
-
-
 # @method sys_python() -> str
 # @in    нет
 # @out   python: str — интерпретатор для запуска инструментов процессом
@@ -292,4 +279,150 @@ class TestGoldenSet(unittest.TestCase):
 
     # @method test_each_record_kind() -> None
     # @in    нет
-    # @
+    # @out   нет
+    # @does  Каждый вид записи отдельно (SPEC, раздел 6): 30 мнемоник
+    # @does  без imm64 и 8 imm-опкодов с каждым золотым значением —
+    # @does  сборка равна эталону байт в байт.
+    # @depends l2_image, parity, RECORDS
+    def test_each_record_kind(self):
+        image = l2_image()
+        for text in RECORDS:
+            with self.subTest(record=text):
+                parity(image, text)
+
+    # @method test_literal_forms() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Литералы всех форм, строки с escape и метки/константы
+    # @does  (SPEC, разделы 3-4 и 6): DB/DW с числами всех форм
+    # @does  и именами, DS/DZ с escape и UTF-8, метки, константы,
+    # @does  ссылки вперёд, метка в конце текста — сборка равна эталону.
+    # @depends l2_image, parity, LITERALS, STRINGS, SYMBOLS
+    def test_literal_forms(self):
+        image = l2_image()
+        for group, texts in (("литералы", LITERALS),
+                             ("строки", STRINGS),
+                             ("метки", SYMBOLS)):
+            for text in texts:
+                with self.subTest(group=group, text=text):
+                    parity(image, text)
+
+    # @method test_stage12_programs() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Программы этапов 1-2 (SPEC, раздел 6): hello.uasm,
+    # @does  arith.uasm, nested_calls.uasm — собственная сборка равна
+    # @does  эталонной байт в байт.
+    # @depends l2_image, parity, src_text, PROGRAMS
+    def test_stage12_programs(self):
+        image = l2_image()
+        for name in PROGRAMS:
+            with self.subTest(program=name):
+                parity(image, src_text(name))
+
+    # @method test_disasm_texts() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Раунд-трип на текстах дизассемблера (SPEC, раздел 6):
+    # @does  вывод эталона disasm на каждом образе золотого набора
+    # @does  дизассемблера собирается обратно в исходный образ.
+    # @depends l2_image, golden_disasm, DISASM_TEXTS
+    def test_disasm_texts(self):
+        image = l2_image()
+        for label, text, data in DISASM_TEXTS:
+            golden_disasm(image, label, text, data)
+
+    # @method test_input_errors() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Ошибки входа (SPEC, раздел 6): по одному тексту на каждый
+    # @does  вид ошибок раздела 7 SPEC/L2-UASM.txt — диагностика и код 16
+    # @does  равны эталону.
+    # @depends l2_image, parity, ERRORS
+    def test_input_errors(self):
+        image = l2_image()
+        for text in ERRORS:
+            with self.subTest(text=text):
+                parity(image, text)
+
+    # @method test_capacity_limits() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Ошибки ёмкости раздела 5А: 256 аргументов DB собираются
+    # @does  (эталон), 257-й — «слишком много аргументов» со строкой 1;
+    # @does  имя в 63 байта собирается (эталон), 64 байта — «слишком
+    # @does  длинное имя»; у эталона лимитов нет — ожидания за границей
+    # @does  явные, код 16.
+    # @depends l2_image, parity, feed, err, ARGS_TEXT, NAME_TEXT
+    def test_capacity_limits(self):
+        image = l2_image()
+        parity(image, "DB" + " 1" * 256 + "\n")
+        parity(image, "n" * 63 + " = 5\n")
+        self.assertEqual(
+            feed(image, ("DB" + " 1" * 257 + "\n").encode("utf-8")),
+            (16, err(1, ARGS_TEXT)))
+        self.assertEqual(
+            feed(image, ("n" * 64 + " = 5\n").encode("utf-8")),
+            (16, err(1, NAME_TEXT)))
+
+    # @method test_set_counts() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Страховка полноты категорий (SPEC, раздел 6): счётные
+    # @does  проверки набора — 30+8 мнемоник, 62 записи, 22 литерала,
+    # @does  9 строк, 10 символ-текстов, 12 ошибок, 171 текст
+    # @does  дизассемблера, 3 программы; защищают от потери категорий
+    # @does  при будущих правках.
+    # @depends RECORDS, LITERALS, STRINGS, SYMBOLS, ERRORS, DISASM_TEXTS,
+    # @depends PROGRAMS, IMM, NOIMM
+    def test_set_counts(self):
+        self.assertEqual((len(NOIMM), len(IMM)), (30, 8))
+        self.assertEqual(len(RECORDS), 62)
+        self.assertEqual(len(LITERALS), 22)
+        self.assertEqual(len(STRINGS), 9)
+        self.assertEqual(len(SYMBOLS), 10)
+        self.assertEqual(len(ERRORS), 12)
+        self.assertEqual(len(DISASM_TEXTS), 171)
+        self.assertEqual(len(PROGRAMS), 3)
+
+
+class TestProcess(unittest.TestCase):
+    """Сквозной конвейер настоящими процессами (SPEC, разделы 5А и 6)."""
+
+    # @method test_process_pipeline() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Полный конвейер контракта настоящими процессами:
+    # @does  ubrick_cli compile собирает собственный ассемблер, uvm_cli
+    # @does  исполняет его с входным файлом src/hello.uasm — stdout равен
+    # @does  эталонному образу; собранный образ исполняется процессом
+    # @does  и печатает «Hi»; коды всех процессов 0.
+    # @depends l2_source, src_path, src_text, tools_path, sys_python,
+    # @depends assemble
+    # @uses   subprocess — запуск инструментов настоящими процессами
+    def test_process_pipeline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = os.path.join(tmp, "assemble.uvm")
+            prog = os.path.join(tmp, "hello.uvm")
+            compile_code = subprocess.call(
+                [sys_python(), tools_path("ubrick_cli.py"), "compile",
+                 l2_source(), tool],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.assertEqual(compile_code, 0)
+            with open(src_path("hello.uasm"), "rb") as source:
+                asm = subprocess.run(
+                    [sys_python(), tools_path("uvm_cli.py"), tool],
+                    stdin=source, capture_output=True, timeout=60)
+            self.assertEqual(asm.returncode, 0)
+            self.assertEqual(asm.stdout, assemble(src_text("hello.uasm"))[0])
+            with open(prog, "wb") as handle:
+                handle.write(asm.stdout)
+            run = subprocess.run(
+                [sys_python(), tools_path("uvm_cli.py"), prog],
+                capture_output=True, timeout=60)
+        self.assertEqual(run.returncode, 0)
+        self.assertEqual(run.stdout, b"Hi")
+
+
+if __name__ == "__main__":
+    unittest.main()
