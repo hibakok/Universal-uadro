@@ -1,0 +1,14 @@
+; @uadro
+; @file    src/hello_dev.uasm
+; @layer   L2
+; @branch  t0.uasm.integration
+; @desc    Программа «вывод символа через порт»: DEVWR пишет 'H' в порт
+; @desc    CON_TX (0x01) шины устройств, HALT 0 завершает (SPEC/L0-UVM.txt,
+; @desc    6А.2-6А.4); стандартный набор (консоль, таймер) привязывает
+; @desc    run_image. Эталон образа — tests/test_uvm_integration.py,
+; @desc    prog_char_output_dev; закрывает подшаг 5.2 Этапа 5.
+
+PUSH 'H'
+PUSH 0x01
+DEVWR
+HALT 0
