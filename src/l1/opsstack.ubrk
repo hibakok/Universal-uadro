@@ -4,8 +4,9 @@
 ; @branch  l1.uvm.emu
 ; @desc    Эмулятор UVM — обработчики группы «стек» 0x00-0x07 (SPEC/
 ; @desc    L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
-; @desc    подшаг 2 — NOP; PUSH, DROP, DUP, SWAP, OVER, ROT, PICK —
-; @desc    подшаг 3 (стеки гостя, кирпичи mem.ubrk).
+; @desc    подшаги 2 и 3 — все восемь кодов группы: NOP, PUSH, DROP, DUP,
+; @desc    SWAP, OVER, ROT, PICK; кирпичи стеков гостя — mem.ubrk
+; @desc    (gpush/gpop/gpick), имена обработчиков — мнемоники строчными.
 
 ; @method nop ( -- )
 ; @in    нет (клетка gpc уже переведена декодером за инструкцию)
@@ -15,3 +16,80 @@
 ; @does  в gpc (decode, dec.ubrk); кирпич dstack (tab.ubrk).
 ; @depends нет
 : nop ;
+
+; @method push ( -- )
+; @in    нет (клетка gv — imm инструкции; gpc уже переведён декодером)
+; @out   нет; imm лежит в DS гостя
+; @does  Обработчик PUSH imm 0x01 (эффект ( — imm )): кладёт значение
+; @does  поля imm64 на стек данных гостя (как op_push эталона,
+; @does  t0.uvm.ops) — gpush (переполнение DS — ловушка 3); кирпич
+; @does  dstack (tab.ubrk).
+; @depends gv, gpush
+: push
+  gv LOAD64 gpush ;
+
+; @method drop ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; вершина DS гостя снята
+; @does  Обработчик DROP 0x02 (эффект ( a — )): снимает вершину стека
+; @does  данных гостя (как op_drop эталона) — gpop (пустой стек —
+; @does  ловушка 2), значение отбрасывается; кирпич dstack (tab.ubrk).
+; @depends gpop, DROP
+: drop
+  gpop DROP ;
+
+; @method dup ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; вершина DS гостя продублирована
+; @does  Обработчик DUP 0x03 (эффект ( a — a a )): дублирует вершину
+; @does  стека данных гостя (как op_dup эталона — PICK 0): копия
+; @does  глубины 0 — gpush (пустой стек — ловушка 2 у gpick, переполнение
+; @does  — ловушка 3); кирпич dstack (tab.ubrk).
+; @depends gpick, gpush
+: dup
+  0 gpick gpush ;
+
+; @method swap ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; два верхних слова DS гостя поменяли местами
+; @does  Обработчик SWAP 0x04 (эффект ( a b -- b a )): gpop снимает
+; @does  оба слова на стек узла, SWAP меняет их порядок, gpush кладёт
+; @does  обратно (как op_swap эталона); меньше двух слов — ловушка 2,
+; @does  переполнение — ловушка 3; кирпич dstack (tab.ubrk).
+; @depends gpop, SWAP, gpush
+: swap
+  gpop gpop SWAP gpush gpush ;
+
+; @method over ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; копия второго сверху слова лежит в DS гостя
+; @does  Обработчик OVER 0x05 (эффект ( a b -- a b a )): копия слова
+; @does  глубины 1 (как op_over эталона — PICK 1) — gpush; меньше двух
+; @does  слов — ловушка 2 у gpick, переполнение — ловушка 3; кирпич
+; @does  dstack (tab.ubrk).
+; @depends gpick, gpush
+: over
+  1 gpick gpush ;
+
+; @method rot ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; тройка верхних слов DS гостя сдвинута циклически
+; @does  Обработчик ROT 0x06 (эффект ( a b c -- b c a )): gpop снимает
+; @does  тройку на стек узла (порядок обращён), два ROT ставят её
+; @does  в порядок-push (b, c, a), gpush кладёт обратно (как op_rot
+; @does  эталона); меньше трёх слов — ловушка 2, переполнение —
+; @does  ловушка 3; кирпич dstack (tab.ubrk).
+; @depends gpop, ROT, gpush
+: rot
+  gpop gpop gpop ROT ROT gpush gpush gpush ;
+
+; @method pick ( -- )
+; @in    нет (клетка gv — глубина imm; gpc уже переведён декодером)
+; @out   нет; копия слова глубины imm лежит в DS гостя
+; @does  Обработчик PICK imm 0x07 (эффект ( xN..x0 -- xN..x0 xN )):
+; @does  копия слова глубины imm (0 = DUP, 1 = OVER) — gpick (глубина
+; @does  вне стека — ловушка 2, сравнение беззнаковое) и gpush
+; @does  (как op_pick эталона); кирпич dstack (tab.ubrk).
+; @depends gv, gpick, gpush
+: pick
+  gv LOAD64 gpick gpush ;
