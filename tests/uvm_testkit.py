@@ -8,7 +8,9 @@
 # @desc    через cli, прогон без процесса с подменёнными stdin/stdout
 # @desc    (run_with_io) и прогон с сохранением машины (run_saved) — для
 # @desc    тестов ветвей t0.uvm.* и собственных инструментов Этапа 4
-# @desc    (SPEC/L4-SELFHOST.txt).
+# @desc    (SPEC/L4-SELFHOST.txt); кирпич isa_v02_table даёт золотым
+# @desc    наборам собственных инструментов опкоды ISA v0.2 — до их
+# @desc    догоняния эталона подшагом 5.4 Этапа 5 (ROADMAP.txt).
 
 """Тест-набор UVM (ветвь t0.infra.tests).
 
@@ -33,6 +35,7 @@ import tempfile
 from tools import uvm_cli
 from tools import uvm_core as uc
 from tools import uvm_run
+from tools import uvm_table as utbl
 
 
 # @method small(ram_size, ds_size, rs_size) -> Machine
@@ -227,3 +230,28 @@ def run_saved(image, feed=b""):
         m, code = patched_stdin(src,
                                 lambda: uvm_run.run_image(image))
     return code, out.buffer.getvalue(), m
+
+
+# Граница ISA v0.2 по коду опкода: всё выше — инструкции v0.3 и новее
+# (DEVRD 0x52, DEVWR 0x53), их собственным инструментам Этапа 4 даёт
+# подшаг 5.4 (ROADMAP.txt, Этап 5).
+V02_MAX_CODE = 0x50
+
+
+# @method isa_v02_table() -> list
+# @in    нет
+# @out   rows: list — записи таблицы опкодов ISA v0.2 (38 опкодов
+# @out   0x00-0x50) вида (код, мнемоника, обработчик, imm64)
+# @does  Даёт подмножество таблицы опкодов эталона (tools/uvm_table,
+# @does  TABLE) под ISA v0.2 — граница V02_MAX_CODE: собственные
+# @does  инструменты Этапа 4 (l1.uvm.*, l2.uasm.*) пишутся под неё,
+# @does  их золотые наборы берут опкоды отсюда, а не из полной
+# @does  таблицы; инструкции v0.3 (шина устройств) приходят
+# @does  собственным инструментам подшагом 5.4 Этапа 5, после чего
+# @does  кирпич удаляется вместе с прицелом (SPEC/L4-SELFHOST.txt,
+# @does  раздел 2: эталон — источник истины, собственные воплощения
+# @does  догоняют его поэтапно).
+# @depends utbl.TABLE
+# @uses   V02_MAX_CODE — граница ISA v0.2
+def isa_v02_table():
+    return [rec for rec in utbl.TABLE if rec[0] <= V02_MAX_CODE]
