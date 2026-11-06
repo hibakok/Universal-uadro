@@ -17,9 +17,13 @@
 ; @does  Принадлежность кода шести диапазонам SPEC/L0-UVM.txt (раздел 5):
 ; @does  0x00-0x07 (стек), 0x10-0x13 (память), 0x20-0x2C (арифметика),
 ; @does  0x30-0x35 (сравнения), 0x40-0x45 (переходы), 0x50 (система);
-; @does  внутри диапазонов пустых кодов нет; цепочка сравнений с EXIT,
-; @does  как rowbase дизассемблера (раздел 5); кирпич decode.
-; @depends LEU, LTU, GTU, DUP, DROP, IF, EXIT, THEN
+; @does  внутри диапазонов пустых кодов нет; после 0x45 валиден ровно
+; @does  0x50 — дыры 0x46-0x4F и всё выше 0x50 дают 0 (исправлено
+; @does  в подшаге 6: раньше хвост «GTU 0x50» принимал 0x46-0x4F
+; @does  как валидные, и это маскировала заготовка dsys, останавливавшая
+; @does  всё с кодом 6); цепочка сравнений с EXIT, как rowbase
+; @does  дизассемблера (раздел 5); кирпич decode.
+; @depends LEU, LTU, EQ, DUP, DROP, IF, EXIT, THEN
 : inrange
   DUP 0x07 LEU IF DROP 1 EXIT THEN
   DUP 0x10 LTU IF DROP 0 EXIT THEN
@@ -30,8 +34,8 @@
   DUP 0x35 LEU IF DROP 1 EXIT THEN
   DUP 0x40 LTU IF DROP 0 EXIT THEN
   DUP 0x45 LEU IF DROP 1 EXIT THEN
-  DUP 0x50 GTU IF DROP 0 EXIT THEN
-  DROP 1 ;
+  DUP 0x50 EQ IF DROP 1 EXIT THEN
+  DROP 0 ;
 
 ; @method hasimm ( code -- flag )
 ; @in    code: слово — опкод 0..255
