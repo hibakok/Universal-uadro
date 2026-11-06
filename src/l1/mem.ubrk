@@ -3,13 +3,14 @@
 ; @layer   L1
 ; @branch  l1.uvm.emu
 ; @desc    Эмулятор UVM — память инструмента: use-включение главного файла
-; @desc    src/l1/emu.ubrk (SPEC/L4-SELFHOST.txt, раздел 5Б, подшаги 1-2).
+; @desc    src/l1/emu.ubrk (SPEC/L4-SELFHOST.txt, раздел 5Б, подшаги 1-4).
 ; @desc    Раскладка ОЗУ инструмента — слова-адреса буферов и клеток
 ; @desc    состояния гостя; кирпичи чтения образа гостя из stdin (keyok,
-; @desc    imgroom, imgput), доступа к памяти гостя по байтам (gloadbyte,
-; @desc    gloadword — ловушка 7 вне ОЗУ гостя) и начального состояния
-; @desc    машины гостя (greset). Стеки гостя (gpush/gpop/gpick, rpush/
-; @desc    rpop) — подшаг 3; записи в память гостя — подшаг 4.
+; @desc    imgroom, imgput), доступа к памяти гостя по байтам и словам
+; @desc    (gloadbyte, gloadword, gstorebyte, gstoreword — ловушка 7 вне
+; @desc    ОЗУ гостя), стеков гостя (gpush/gpop/gpick — ловушки 2/3,
+; @desc    rpush/rpop — ловушки 4/5) и начального состояния машины гостя
+; @desc    (greset). Обработчикам CALL/RET (подшаг 6) нужны rpush/rpop.
 
 ; Раскладка ОЗУ инструмента (SPEC/L4-SELFHOST.txt, раздел 5Б): адреса
 ; фиксированы, лимиты — часть контракта; собственный образ инструмента
@@ -46,7 +47,7 @@
 ; @in    нет
 ; @out   addr: слово — адрес 0x90000, первый байт стека данных гостя
 ; @does  Раскладка ОЗУ: стек данных гостя DS — 256 слов, растёт вверх;
-; @does  кирпичи стеков — подшаг 3 (пока клетка gdsp = 0).
+; @does  кирпичи стеков — gpush/gpop/gpick (подшаг 3).
 : gdsbase
   0x90000 ;
 
@@ -54,7 +55,7 @@
 ; @in    нет
 ; @out   addr: слово — адрес 0x90800, за последним байтом стека DS гостя
 ; @does  Раскладка ОЗУ: предел стека данных гостя (256 слов по 8 байтов);
-; @does  переполнение — ловушка 3, подшаг 3.
+; @does  переполнение — ловушка 3 (gpush, подшаг 3).
 : gdslimit
   0x90800 ;
 
@@ -62,7 +63,7 @@
 ; @in    нет
 ; @out   addr: слово — адрес 0x90800, первый байт стека возвратов гостя
 ; @does  Раскладка ОЗУ: стек возвратов гостя RS — 64 слова, растёт вверх;
-; @does  кирпичи стеков — подшаг 3 (пока клетка grsp = 0).
+; @does  кирпичи стеков — rpush/rpop (подшаг 3).
 : grsbase
   0x90800 ;
 
@@ -70,7 +71,7 @@
 ; @in    нет
 ; @out   addr: слово — адрес 0x90A00, за последним байтом стека RS гостя
 ; @does  Раскладка ОЗУ: предел стека возвратов гостя (64 слова по 8);
-; @does  переполнение — ловушка 5, подшаг 3.
+; @does  переполнение — ловушка 5 (rpush, подшаг 3).
 : grslimit
   0x90A00 ;
 
@@ -139,7 +140,7 @@
 ; @does  гостя a -> grambase + a): a >= gramsize — ловушка 7 гостя
 ; @does  (STOP, код 7) прежде сложения с базой — перенос слова при
 ; @does  a + grambase ошибочно прошёл бы проверку по пределу; кирпич
-; @does  декодера (dec.ubrk) и обработчиков группы «память» (подшаг 4).
+; @does  декодера (dec.ubrk) и группы «память» (opsmem.ubrk, подшаг 4).
 ; @depends gramsize, LTU, not, grambase, ADD, LOAD8, STOP
 : gloadbyte
   DUP gramsize LTU not IF DROP 7 STOP THEN
@@ -173,13 +174,138 @@ var ga
 ; @out   w: слово — 64-битное слово ОЗУ гостя (байты little-endian)
 ; @does  Читает восемь байтов LE из ОЗУ гостя (проверка каждого байта —
 ; @does  gloadbyte, ловушка 7): ga = a, gi = 0, gw = 0, затем gwstep до
-; @does  готовности; кирпич декодера — поле imm64 (dec.ubrk) и будущий
-; @does  обработчик LOAD64 (подшаг 4).
+; @does  готовности; кирпич декодера — поле imm64 (dec.ubrk) и обработчик
+; @does  LOAD64 (opsmem.ubrk, подшаг 4).
 ; @depends ga, gi, gw, gwstep
 : gloadword
   ga STORE64 0 gi STORE64 0 gw STORE64
   BEGIN gwstep UNTIL
   gw LOAD64 ;
+
+; @method gpush ( w -- )
+; @in    w: слово — слово для стека данных гостя
+; @out   нет; слово w лежит в DS гостя, клетка gdsp увеличена на 1
+; @does  Кладёт слово на стек данных гостя (как ds_push эталона,
+; @does  t0.uvm.core): стек полон — gdsp не меньше ёмкости из раскладки
+; @does  (gdsbase/gdslimit, 256 слов) — ловушка 3 гостя (STOP, код 3);
+; @does  слово пишется STORE64 по gdsbase + gdsp * 8, gdsp + 1; кирпич
+; @does  обработчиков группы «стек» (opsstack.ubrk, подшаг 3).
+; @depends gdspaddr, gdslimit, gdsbase, SUB, UDIV, GEU, IF, DROP, STOP,
+; @depends MUL, ADD, STORE64, LOAD64
+: gpush
+  gdspaddr LOAD64 gdslimit gdsbase SUB 8 UDIV GEU
+  IF DROP 3 STOP THEN
+  gdsbase gdspaddr LOAD64 8 MUL ADD STORE64
+  gdspaddr LOAD64 1 ADD gdspaddr STORE64 ;
+
+; @method gpop ( -- w )
+; @in    нет (клетка gdsp — число слов в DS гостя)
+; @out   w: слово — снятая вершина стека данных гостя
+; @does  Снимает вершину стека данных гостя (как ds_pop эталона):
+; @does  пустой стек (gdsp = 0) — ловушка 2 гостя (STOP, код 2); gdsp
+; @does  уменьшается на 1, слово читается LOAD64 по gdsbase + gdsp * 8;
+; @does  кирпич обработчиков группы «стек» (подшаг 3).
+; @depends gdspaddr, EQ, IF, STOP, SUB, STORE64, gdsbase, MUL, ADD,
+; @depends LOAD64
+: gpop
+  gdspaddr LOAD64 0 EQ IF 2 STOP THEN
+  gdspaddr LOAD64 1 SUB gdspaddr STORE64
+  gdsbase gdspaddr LOAD64 8 MUL ADD LOAD64 ;
+
+; @method gpick ( d -- w )
+; @in    d: слово — глубина элемента (0 — вершина DS гостя)
+; @out   w: слово — копия элемента глубины d; стек гостя не меняется
+; @does  Копия элемента глубины d стека данных гостя (как ds_pick
+; @does  эталона): d не меньше gdsp (сравнение беззнаковое — imm64 может
+; @does  быть до 2^64-1) — ловушка 2 гостя; слово читается LOAD64
+; @does  по gdsbase + (gdsp - 1 - d) * 8; кирпич обработчиков DUP/OVER/
+; @does  PICK (подшаг 3).
+; @depends gdspaddr, DUP, GEU, IF, DROP, STOP, SUB, SWAP, MUL, gdsbase,
+; @depends ADD, LOAD64
+: gpick
+  DUP gdspaddr LOAD64 GEU IF DROP 2 STOP THEN
+  gdspaddr LOAD64 1 SUB SWAP SUB 8 MUL gdsbase ADD LOAD64 ;
+
+; @method rpush ( w -- )
+; @in    w: слово — слово для стека возвратов гостя
+; @out   нет; слово w лежит в RS гостя, клетка grsp увеличена на 1
+; @does  Кладёт слово на стек возвратов гостя (как rs_push эталона):
+; @does  стек полон — grsp не меньше ёмкости из раскладки (grsbase/
+; @does  grslimit, 64 слова) — ловушка 5 гостя (STOP, код 5); слово
+; @does  пишется STORE64 по grsbase + grsp * 8, grsp + 1; кирпич
+; @does  обработчика CALL (opsjump.ubrk, подшаг 6).
+; @depends grspaddr, grslimit, grsbase, SUB, UDIV, GEU, IF, DROP, STOP,
+; @depends MUL, ADD, STORE64, LOAD64
+: rpush
+  grspaddr LOAD64 grslimit grsbase SUB 8 UDIV GEU
+  IF DROP 5 STOP THEN
+  grsbase grspaddr LOAD64 8 MUL ADD STORE64
+  grspaddr LOAD64 1 ADD grspaddr STORE64 ;
+
+; @method rpop ( -- w )
+; @in    нет (клетка grsp — число слов в RS гостя)
+; @out   w: слово — снятая вершина стека возвратов гостя
+; @does  Снимает вершину стека возвратов гостя (как rs_pop эталона):
+; @does  пустой стек (grsp = 0) — ловушка 4 гостя (STOP, код 4); grsp
+; @does  уменьшается на 1, слово читается LOAD64 по grsbase + grsp * 8;
+; @does  кирпич обработчика RET (opsjump.ubrk, подшаг 6).
+; @depends grspaddr, EQ, IF, STOP, SUB, STORE64, grsbase, MUL, ADD,
+; @depends LOAD64
+: rpop
+  grspaddr LOAD64 0 EQ IF 4 STOP THEN
+  grspaddr LOAD64 1 SUB grspaddr STORE64
+  grsbase grspaddr LOAD64 8 MUL ADD LOAD64 ;
+
+; @method gstorebyte ( addr val -- )
+; @in    addr: слово — адрес гостя (глубже на стеке узла)
+; @in    val: слово — значение; записывается его младший байт (вершина)
+; @out   нет; младший байт val в ОЗУ гостя по адресу addr
+; @does  Пишет младший байт val в ОЗУ гостя (как store_byte эталона,
+; @does  t0.uvm.core; зеркально gloadbyte): addr не меньше gramsize —
+; @does  ловушка 7 гостя (STOP, код 7) прежде сложения с базой — перенос
+; @does  слова при addr + grambase ошибочно прошёл бы проверку; адрес
+; @does  узла — grambase + addr, байт — STORE8; кирпич swstep и обработчик
+; @does  STORE8 (opsmem.ubrk, подшаг 4).
+; @depends SWAP, DUP, gramsize, LTU, not, IF, DROP, STOP, grambase, ADD,
+; @depends STORE8
+: gstorebyte
+  SWAP DUP gramsize LTU not IF DROP DROP 7 STOP THEN
+  grambase ADD STORE8 ;
+
+; Клетки записи слова гостя: si — индекс байта 0..8, sv — значение,
+; sa — адрес гостя младшего байта (gstoreword).
+var sa
+var sv
+var si
+
+; @method swstep ( -- done )
+; @in    нет (клетки sa, sv, si — состояние записи слова)
+; @out   done: слово — 0: байт записан; 1: все восемь байтов записаны
+; @does  Один шаг записи слова в ОЗУ гостя (как store_word эталона):
+; @does  адрес гостя sa + si, байт (sv >> 8 * si) AND 255 — gstorebyte
+; @does  (ловушка 7 вне ОЗУ гостя), si + 1; кирпич gstoreword.
+; @depends sa, si, LOAD64, ADD, sv, MUL, SHR, AND, gstorebyte, GEU, IF,
+; @depends EXIT, STORE64
+: swstep
+  si LOAD64 8 GEU IF 1 EXIT THEN
+  sa LOAD64 si LOAD64 ADD
+  sv LOAD64 si LOAD64 8 MUL SHR 255 AND
+  gstorebyte
+  si LOAD64 1 ADD si STORE64
+  0 ;
+
+; @method gstoreword ( addr val -- )
+; @in    addr: слово — адрес гостя младшего байта (глубже на стеке узла)
+; @in    val: слово — значение; биты старше 64 игнорируются (вершина)
+; @out   нет; восемь байтов val в ОЗУ гостя little-endian по адресу addr
+; @does  Раскладывает слово val в восемь байтов LE ОЗУ гостя (как
+; @does  store_word эталона): sa = addr, sv = val, si = 0, затем swstep
+; @does  до готовности — каждый байт проверен gstorebyte (ловушка 7);
+; @does  кирпич обработчика STORE64 (opsmem.ubrk, подшаг 4).
+; @depends SWAP, sa, sv, si, STORE64, swstep, BEGIN, UNTIL
+: gstoreword
+  SWAP sa STORE64 sv STORE64 0 si STORE64
+  BEGIN swstep UNTIL ;
 
 ; @method greset ( -- )
 ; @in    нет
