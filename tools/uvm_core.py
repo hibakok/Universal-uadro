@@ -132,10 +132,12 @@ def in_ram(m, addr):
 # @in    m: Machine — состояние машины
 # @in    addr: int — адрес байта
 # @out   b: int — байт 0..255
-# @does  Читает байт ОЗУ; адрес вне ОЗУ — ловушка 7.
-# @depends in_ram, trap
+# @does  Читает байт ОЗУ; адрес вне ОЗУ — ловушка 7. Горячий кирпич
+# @does  интерпретатора: проверка границы встроена в тело (раньше —
+# @does  вызов in_ram); поведение то же, вызовов меньше.
+# @depends trap
 def load_byte(m, addr):
-    if not in_ram(m, addr):
+    if not 0 <= addr < len(m.ram):
         trap(TRAP_OOB)
     return m.ram[addr]
 
@@ -146,11 +148,13 @@ def load_byte(m, addr):
 # @in    val: int — значение; записывается его младший байт
 # @out   нет
 # @does  Пишет младший байт val в ОЗУ; адрес вне ОЗУ — ловушка 7.
-# @depends in_ram, trap, to_byte
+# @does  Горячий кирпич интерпретатора: проверка границы встроена
+# @does  в тело (раньше — вызов in_ram); поведение то же.
+# @depends trap
 def store_byte(m, addr, val):
-    if not in_ram(m, addr):
+    if not 0 <= addr < len(m.ram):
         trap(TRAP_OOB)
-    m.ram[addr] = to_byte(val)
+    m.ram[addr] = val & BYTE_MASK
 
 
 # @method load_word(m, addr) -> int
@@ -158,9 +162,15 @@ def store_byte(m, addr, val):
 # @in    addr: int — адрес младшего байта слова
 # @out   w: int — 64-битное слово
 # @does  Собирает слово из 8 байтов ОЗУ в порядке little-endian, без
-# @does  требования выравнивания (SPEC, раздел 1).
+# @does  требования выравнивания (SPEC, раздел 1). Быстрый путь — срез
+# @does  восьми байтов одной проверкой границы; слово на границе ОЗУ
+# @does  идёт побайтово через load_byte — ловушка 7 на первом байте
+# @does  вне ОЗУ, как раньше.
 # @depends load_byte
 def load_word(m, addr):
+    ram = m.ram
+    if 0 <= addr and addr + 8 <= len(ram):
+        return int.from_bytes(ram[addr:addr + 8], "little")
     w = 0
     for i in range(8):
         w |= load_byte(m, addr + i) << (8 * i)
@@ -173,9 +183,16 @@ def load_word(m, addr):
 # @in    val: int — слово; биты старше 64 игнорируются
 # @out   нет
 # @does  Раскладывает слово в 8 байтов ОЗУ в порядке little-endian,
-# @does  без требования выравнивания.
+# @does  без требования выравнивания. Быстрый путь — срез восемь
+# @does  байтов одной проверкой границы; слово на границе ОЗУ идёт
+# @does  побайтово через store_byte — ловушка 7 на первом байте
+# @does  вне ОЗУ, как раньше.
 # @depends store_byte
 def store_word(m, addr, val):
+    ram = m.ram
+    if 0 <= addr and addr + 8 <= len(ram):
+        ram[addr:addr + 8] = (val & WORD_MASK).to_bytes(8, "little")
+        return
     for i in range(8):
         store_byte(m, addr + i, (val >> (8 * i)) & BYTE_MASK)
 
@@ -202,11 +219,13 @@ def load_image(m, image):
 # @in    w: int — слово; оборачивается по модулю 2^64
 # @out   нет
 # @does  Кладёт слово на стек данных; переполнение ёмкости — ловушка 3.
-# @depends to_word, trap
+# @does  Горячий кирпич интерпретатора: маска слова встроена в тело
+# @does  (раньше — вызов to_word); поведение то же.
+# @depends trap
 def ds_push(m, w):
     if len(m.ds) >= m.ds_size:
         trap(TRAP_DS_FULL)
-    m.ds.append(to_word(w))
+    m.ds.append(w & WORD_MASK)
 
 
 # @method ds_pop(m) -> int
@@ -252,11 +271,13 @@ def ds_pick(m, depth):
 # @in    w: int — слово; оборачивается по модулю 2^64
 # @out   нет
 # @does  Кладёт слово на стек возвратов; переполнение ёмкости — ловушка 5.
-# @depends to_word, trap
+# @does  Горячий кирпич интерпретатора: маска слова встроена в тело
+# @does  (раньше — вызов to_word); поведение то же.
+# @depends trap
 def rs_push(m, w):
     if len(m.rs) >= m.rs_size:
         trap(TRAP_RS_FULL)
-    m.rs.append(to_word(w))
+    m.rs.append(w & WORD_MASK)
 
 
 # @method rs_pop(m) -> int
