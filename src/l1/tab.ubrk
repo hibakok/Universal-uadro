@@ -3,34 +3,50 @@
 ; @layer   L1
 ; @branch  l1.uvm.emu
 ; @desc    Эмулятор UVM — дерево диапазонов: таблица обработчиков (SPEC/
-; @desc    L4-SELFHOST.txt, раздел 5Б, подшаг 2): dispatch — вложенные IF
+; @desc    L4-SELFHOST.txt, раздел 5Б, подшаги 2-4): dispatch — вложенные IF
 ; @desc    по шести диапазонам SPEC/L0-UVM.txt (раздел 5), внутри — слова
 ; @desc    групп, по коду — CALL обработчика (ops*.ubrk, по файлу на
-; @desc    группу, как t0.uvm.ops); коды без обработчика — ловушка 6:
-; @desc    заготовка подшагов 3-6 (стеки, память, арифметика и сравнения,
-; @desc    переходы и SYS).
+; @desc    группу, как t0.uvm.ops): «стек» и «память» — все коды групп;
+; @desc    арифметика, сравнения, переходы (кроме HALT) и SYS — подшаги
+; @desc    5-6, пока ловушка 6.
 
 ; @method dstack ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
 ; @out   нет; CALL обработчика группы «стек» — либо ловушка 6
-; @does  Группа «стек» 0x00-0x07 (SPEC/L0-UVM.txt, раздел 5): NOP (0x00)
-; @does  — обработчик nop (opsstack.ubrk); PUSH, DROP, DUP, SWAP, OVER,
-; @does  ROT, PICK — подшаг 3 (пока ловушка 6); кирпич dispatch.
-; @depends gc, EQ, DUP, DROP, IF, EXIT, THEN, nop, STOP
+; @does  Группа «стек» 0x00-0x07 (SPEC/L0-UVM.txt, раздел 5): NOP — nop,
+; @does  PUSH — push, DROP — drop, DUP — dup, SWAP — swap, OVER — over,
+; @does  ROT — rot, PICK — pick (все — opsstack.ubrk, подшаги 2-3);
+; @does  последний код достаётся без сравнения — принадлежность
+; @does  диапазону уже проверил decode; кирпич dispatch.
+; @depends gc, EQ, DUP, DROP, IF, EXIT, THEN, nop, push, drop, dup, swap,
+; @depends over, rot, pick, STOP
 : dstack
   gc LOAD64
   DUP 0x00 EQ IF DROP nop EXIT THEN
-  DROP 6 STOP ;
+  DUP 0x01 EQ IF DROP push EXIT THEN
+  DUP 0x02 EQ IF DROP drop EXIT THEN
+  DUP 0x03 EQ IF DROP dup EXIT THEN
+  DUP 0x04 EQ IF DROP swap EXIT THEN
+  DUP 0x05 EQ IF DROP over EXIT THEN
+  DUP 0x06 EQ IF DROP rot EXIT THEN
+  DROP pick ;
 
 ; @method dmem ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
-; @out   нет; не возвращается: ловушка 6 (пока нет обработчиков)
-; @does  Группа «память» 0x10-0x13 (LOAD8, LOAD64, STORE8, STORE64) —
-; @does  подшаг 4: обработчиков ещё нет, любой код группы — ловушка 6
-; @does  (заготовка дерева); кирпич dispatch.
-; @depends STOP
+; @out   нет; CALL обработчика группы «память» — либо ловушка 6
+; @does  Группа «память» 0x10-0x13 (SPEC/L0-UVM.txt, раздел 5): LOAD8 —
+; @does  load8, LOAD64 — load64, STORE8 — store8, STORE64 — store64
+; @does  (все — opsmem.ubrk, подшаг 4); последний код достаётся без
+; @does  сравнения — принадлежность диапазону уже проверил decode;
+; @does  кирпич dispatch.
+; @depends gc, EQ, DUP, DROP, IF, EXIT, THEN, load8, load64, store8,
+; @depends store64, STOP
 : dmem
-  6 STOP ;
+  gc LOAD64
+  DUP 0x10 EQ IF DROP load8 EXIT THEN
+  DUP 0x11 EQ IF DROP load64 EXIT THEN
+  DUP 0x12 EQ IF DROP store8 EXIT THEN
+  DROP store64 ;
 
 ; @method darith ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
