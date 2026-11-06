@@ -32,7 +32,10 @@ opcode_images, cut_images, tail_images, mixed_images, program_images,
 восемь, смешанная); смешанные программы — инструкции обоих видов,
 данные и дыра таблицы в конце; образы программ этапов 1-2 — собранные
 эталонным ассемблером src/hello.uasm, src/arith.uasm,
-src/nested_calls.uasm.
+src/nested_calls.uasm. Опкоды набора — ISA v0.2 (кирпич
+isa_v02_table тест-набора): DEVRD/DEVWR v0.3 приходят собственному
+дизассемблеру подшагом 5.4 Этапа 5, тогда набор вырастет вместе
+с таблицей.
 
 TestProcess — сквозной конвейер настоящими процессами: ubrick_cli
 compile собирает собственный дизассемблер, uasm_cli asm собирает
@@ -50,10 +53,13 @@ from tests import uvm_testkit as tk
 from tools import ubrick_cli
 from tools import uasm_assemble as am
 from tools.uasm_disasm import disasm as ref_disasm
-from tools.uvm_table import TABLE
-
-NOIMM = [rec for rec in TABLE if not rec[3]]   # опкоды без поля imm64
-IMM = [rec for rec in TABLE if rec[3]]         # опкоды с полем imm64
+# Собственный дизассемблер пишется под ISA v0.2 (SPEC/L4-SELFHOST.txt,
+# раздел 2): опкоды — из кирпича isa_v02_table, а не из полной таблицы
+# эталона (уже с DEVRD/DEVWR v0.3); собственному дизассемблеру они
+# приходят подшагом 5.4 (ROADMAP.txt, Этап 5).
+V02 = tk.isa_v02_table()                      # ISA v0.2 — 38 опкодов
+NOIMM = [rec for rec in V02 if not rec[3]]   # опкоды без поля imm64
+IMM = [rec for rec in V02 if rec[3]]         # опкоды с полем imm64
 VALUES = (0, 1, 12345, 2 ** 64 - 1)            # золотые значения imm64
 TAIL_OPS = (0x51, 0xFF)                        # неизвестные опкоды хвоста
 TAIL_COUNTS = range(19)                        # длины хвоста 0-18
