@@ -64,12 +64,15 @@ from tests import uvm_testkit as tk
 from tools import ubrick_cli
 from tools.uasm_assemble import assemble
 from tools.uasm_disasm import disasm as ref_disasm
-from tools.uvm_table import TABLE
-
+# Собственный ассемблер пишется под ISA v0.2 (SPEC/L4-SELFHOST.txt,
+# раздел 2): мнемоники — из кирпича isa_v02_table, а не из полной
+# таблицы эталона (уже с DEVRD/DEVWR v0.3); собственному ассемблеру
+# они приходят подшагом 5.4 (ROADMAP.txt, Этап 5).
+V02 = tk.isa_v02_table()                      # ISA v0.2 — 38 опкодов
 PROGRAMS = ("hello.uasm", "arith.uasm", "nested_calls.uasm")
 VALUES = (0, 1, 12345, 2 ** 64 - 1)            # золотые значения imm64
-IMM = [rec for rec in TABLE if rec[3]]         # опкоды с полем imm64
-NOIMM = [rec for rec in TABLE if not rec[3]]   # опкоды без поля
+IMM = [rec for rec in V02 if rec[3]]          # опкоды с полем imm64
+NOIMM = [rec for rec in V02 if not rec[3]]    # опкоды без поля
 ARGS_TEXT = "слишком много аргументов"         # лимит 256 пар аргументов
 NAME_TEXT = "слишком длинное имя"              # лимит имени 63 байта
 
