@@ -25,7 +25,7 @@ decode_at — чистый кирпич: читает по адресу байт
 """
 
 from tools.uvm_core import TRAP_BAD_OPCODE, TRAP_OOB, load_byte, trap
-from tools.uvm_table import BY_CODE
+from tools.uvm_table import BY_LIST
 
 OPCODE_SIZE = 1  # байт опкода (SPEC, раздел 4)
 IMM_SIZE = 8     # байтов в поле imm64 (SPEC, раздел 4)
@@ -44,12 +44,12 @@ IMM_SIZE = 8     # байтов в поле imm64 (SPEC, раздел 4)
 # @does  опкод и imm64 читаются встроенными срезами, поле на границе
 # @does  ОЗУ — побайтово через load_byte (ловушка 7 на первом байте
 # @does  вне ОЗУ, как раньше).
-# @depends load_byte, trap, BY_CODE
+# @depends load_byte, trap, BY_LIST
 def decode_at(m, addr):
     ram = m.ram
     if not 0 <= addr < len(ram):
         trap(TRAP_OOB)
-    entry = BY_CODE.get(ram[addr])
+    entry = BY_LIST[ram[addr]]
     if entry is None:
         trap(TRAP_BAD_OPCODE)
     if not entry[3]:
