@@ -4,8 +4,9 @@
 # @branch  t0.infra.tests
 # @desc    Тесты кирпичей тест-набора: run_with_io — прогон образа
 # @desc    без процесса (эхо-фильтр до конца ввода, коды завершения,
-# @desc    частичный вывод до ловушки, восстановление потоков) и проброс
-# @desc    результата patched_stdin.
+# @desc    частичный вывод до ловушки, восстановление потоков), проброс
+# @desc    результата patched_stdin и run_saved — прогон с сохранением
+# @desc    машины (снимки ОЗУ и PC из остановленной машины).
 
 """Тесты кирпичей тест-набора (ветвь t0.infra.tests).
 
@@ -16,7 +17,9 @@ run_with_io — основа золотых тестов собственных 
 каждый прочитанный байт (SYS 1). Программы собираются кирпичами
 image_of и imm64; адреса подсчитаны по формату инструкций
 (SPEC/L0-UVM.txt, раздел 4): байт опкода, при наличии поля imm64 —
-ещё восемь байтов.
+ещё восемь байтов. run_saved (SPEC/L4-SELFHOST.txt, раздел 5Б) —
+тот же прогон с сохранением машины узла: тесты эмулятора l1.uvm.*
+читают снимки гостя из ОЗУ инструмента по раскладке.
 """
 
 import sys
@@ -24,6 +27,7 @@ import unittest
 
 from tests import uvm_testkit as tk
 from tools import uvm_core as uc
+from tools import uvm_run
 
 
 # Эхо-фильтр «ввод -> вывод» до конца ввода: цикл читает байт (SYS 0),
@@ -96,6 +100,42 @@ class TestRunWithIo(unittest.TestCase):
         before = (sys.stdin, sys.stdout)
         tk.run_with_io(tk.image_of([0x45, tk.imm64(0)]))
         self.assertEqual((sys.stdin, sys.stdout), before)
+
+
+class TestRunSaved(unittest.TestCase):
+    """Кирпич run_saved: прогон с сохранением машины узла."""
+
+    # @method test_returns_machine_snapshot() -> None
+    # @in    нет
+    # @out   нет
+    # @does  run_saved возвращает остановленную машину: программа STORE8
+    # @does  пишет байт в ОЗУ — снимок видит его; PC остановлен за
+    # @does  инструкцией HALT (decode эталона переводит PC до обработчика);
+    # @does  снимки по раскладке читает эмулятор l1.uvm.* (раздел 5Б).
+    def test_returns_machine_snapshot(self):
+        image = tk.image_of([
+            0x01, tk.imm64(65),    # PUSH 65 ( val )
+            0x01, tk.imm64(100),   # PUSH 100 ( val addr )
+            0x12,                  # STORE8: ОЗУ[100] = 65
+            0x45, tk.imm64(0),     # HALT 0
+        ])
+        code, out, m = tk.run_saved(image)
+        self.assertEqual((code, out), (0, b""))
+        self.assertEqual(m.ram[100], 65)
+        self.assertEqual(m.pc, len(image))
+
+    # @method test_machine_matches_plain_run() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Состояние машины run_saved совпадает с прогоном run_image
+    # @does  без подменённых потоков: коды равны, ОЗУ равны.
+    def test_machine_matches_plain_run(self):
+        image = tk.image_of([0x45, tk.imm64(7)])
+        code, out, m = tk.run_saved(image)
+        m2, code2 = uvm_run.run_image(image)
+        self.assertEqual(code, code2)
+        self.assertEqual(m.ram, m2.ram)
+        self.assertEqual(m.pc, m2.pc)
 
 
 class TestPatchedStdin(unittest.TestCase):
