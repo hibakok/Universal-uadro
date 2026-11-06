@@ -6,7 +6,9 @@
 # @desc    собираются командой uasm_cli asm и исполняются uvm_cli;
 # @desc    «вывод символа» и «арифметика» — байт в байт с эталонами
 # @desc    Этапа 1, «вложенные CALL/RET» — метками, с тем же поведением
-# @desc    (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2).
+# @desc    (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2); «вывод символа через
+# @desc    порт» — DEVWR в CON_TX, подшаг 5.2 Этапа 5 (SPEC/L0-UVM.txt,
+# @desc    6А.2; мнемоники DEVRD/DEVWR — SPEC/L2-UASM.txt v0.2).
 
 """Интеграционные программы Этапа 2 (ветвь t0.uasm.integration).
 
@@ -21,8 +23,12 @@
 воспроизводит ручную сборку точно. «Вложенные CALL/RET» пишутся
 метками без NOP-выравнивания — образ короче эталона, поведение то же:
 вывод "!", стек [111, 222], пустой RS, код 0; раунд-трип
-assemble(disasm(B)) == B проверен на его образе. TestProcess гоняет
-обе команды документации настоящими процессами (asm, затем run).
+assemble(disasm(B)) == B проверен на его образе. «Вывод символа через
+порт» (src/hello_dev.uasm, подшаг 5.2) собирается в образ эталона
+prog_char_output_dev и пишет байт в порт CON_TX шины устройств —
+стандартный набор привязывает run_image (SPEC/L0-UVM.txt, 6А.2-6А.4).
+TestProcess гоняет обе команды документации настоящими процессами
+(asm, затем run).
 
 Запуск из корня репозитория:
     python -m unittest discover -s tests -t . -v
@@ -36,7 +42,8 @@ import tempfile
 import unittest
 
 from tests import uvm_testkit as tk
-from tests.test_uvm_integration import prog_arithmetic, prog_char_output
+from tests.test_uvm_integration import (prog_arithmetic, prog_char_output,
+                                         prog_char_output_dev)
 from tools import uasm_assemble as am
 from tools import uasm_cli
 from tools import uasm_disasm as dis
@@ -167,6 +174,42 @@ class TestNestedCalls(unittest.TestCase):
         again, error = am.assemble(dis.disasm(image))
         self.assertIsNone(error)
         self.assertEqual(again, image)
+
+
+class TestHelloDev(unittest.TestCase):
+    """«Вывод символа через порт»: DEVWR в CON_TX (подшаг 5.2)."""
+
+    # @method test_cli_asm_matches_reference() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Команда asm собирает исходник с мнемоникой DEVWR (SPEC/
+    # @does  L2-UASM.txt v0.2: операнда нет) в образ, равный эталону
+    # @does  prog_char_output_dev: PUSH 'H', PUSH 0x01, DEVWR, HALT 0.
+    def test_cli_asm_matches_reference(self):
+        self.assertEqual(cli_image("hello_dev.uasm"),
+                         prog_char_output_dev())
+
+    # @method test_run_image_outputs_h() -> None
+    # @in    нет
+    # @out   нет
+    # @does  run_image (привязка стандартного набора — консоль):
+    # @does  код 0, в stdout — "H", стек пуст.
+    def test_run_image_outputs_h(self):
+        out = tk.FakeStream()
+        with contextlib.redirect_stdout(out):
+            m, code = rn.run_image(cli_image("hello_dev.uasm"))
+        self.assertEqual(code, 0)
+        self.assertEqual(out.buffer.getvalue(), b"H")
+        self.assertEqual(tk.stack_of(m), [])
+
+    # @method test_uvm_cli_outputs_h() -> None
+    # @in    нет
+    # @out   нет
+    # @does  uvm_cli: код 0, в stdout — "H".
+    def test_uvm_cli_outputs_h(self):
+        code, out = tk.run_via_cli(cli_image("hello_dev.uasm"))
+        self.assertEqual(code, 0)
+        self.assertEqual(out, b"H")
 
 
 class TestProcess(unittest.TestCase):
