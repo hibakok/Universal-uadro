@@ -1,0 +1,194 @@
+; @uadro
+; @file    src/l1/mem.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — память инструмента: use-включение главного файла
+; @desc    src/l1/emu.ubrk (SPEC/L4-SELFHOST.txt, раздел 5Б, подшаги 1-2).
+; @desc    Раскладка ОЗУ инструмента — слова-адреса буферов и клеток
+; @desc    состояния гостя; кирпичи чтения образа гостя из stdin (keyok,
+; @desc    imgroom, imgput), доступа к памяти гостя по байтам (gloadbyte,
+; @desc    gloadword — ловушка 7 вне ОЗУ гостя) и начального состояния
+; @desc    машины гостя (greset). Стеки гостя (gpush/gpop/gpick, rpush/
+; @desc    rpop) — подшаг 3; записи в память гостя — подшаг 4.
+
+; Раскладка ОЗУ инструмента (SPEC/L4-SELFHOST.txt, раздел 5Б): адреса
+; фиксированы, лимиты — часть контракта; собственный образ инструмента
+; загружается с адреса 0 и лежит ниже буферов.
+
+; @method grambase ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x10000, первый байт ОЗУ гостя в ОЗУ узла
+; @does  Раскладка ОЗУ (SPEC/L4-SELFHOST.txt, раздел 5Б): ОЗУ гостя —
+; @does  512 КиБ, образ с stdin пишется с адреса гостя 0; доступ
+; @does  к памяти гостя — через базу: адрес гостя a -> 0x10000 + a.
+: grambase
+  0x10000 ;
+
+; @method gramlimit ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90000, за последним байтом ОЗУ гостя
+; @does  Предел образа гостя в ОЗУ узла: вход длиннее 512 КиБ — ловушка
+; @does  7 гостя до начала исполнения — код 7, вывод пуст (раздел 5Б);
+; @does  кирпич imgstep главного файла emu.ubrk.
+: gramlimit
+  0x90000 ;
+
+; @method gramsize ( -- n )
+; @in    нет
+; @out   n: слово — 0x80000, размер ОЗУ гостя в байтах (512 КиБ)
+; @does  Размер ОЗУ гостя: адрес гостя обязан быть меньше gramsize
+; @does  прежде сложения с базой — перенос слова при a + grambase
+; @does  ошибочно прошёл бы проверку по пределу; кирпич gloadbyte.
+: gramsize
+  0x80000 ;
+
+; @method gdsbase ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90000, первый байт стека данных гостя
+; @does  Раскладка ОЗУ: стек данных гостя DS — 256 слов, растёт вверх;
+; @does  кирпичи стеков — подшаг 3 (пока клетка gdsp = 0).
+: gdsbase
+  0x90000 ;
+
+; @method gdslimit ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90800, за последним байтом стека DS гостя
+; @does  Раскладка ОЗУ: предел стека данных гостя (256 слов по 8 байтов);
+; @does  переполнение — ловушка 3, подшаг 3.
+: gdslimit
+  0x90800 ;
+
+; @method grsbase ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90800, первый байт стека возвратов гостя
+; @does  Раскладка ОЗУ: стек возвратов гостя RS — 64 слова, растёт вверх;
+; @does  кирпичи стеков — подшаг 3 (пока клетка grsp = 0).
+: grsbase
+  0x90800 ;
+
+; @method grslimit ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90A00, за последним байтом стека RS гостя
+; @does  Раскладка ОЗУ: предел стека возвратов гостя (64 слова по 8);
+; @does  переполнение — ловушка 5, подшаг 3.
+: grslimit
+  0x90A00 ;
+
+; @method gpcaddr ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90A00, клетка gpc — PC гостя
+; @does  Раскладка ОЗУ: клетки состояния гостя с 0x90A00; gpc хранит
+; @does  счётчик команд гостя, снимок машины читается из ОЗУ узла
+; @does  по раскладке (раздел 5Б: тест-кирпич run_saved, t0.infra.tests).
+: gpcaddr
+  0x90A00 ;
+
+; @method gdspaddr ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90A08, клетка gdsp — слов в DS гостя
+; @does  Раскладка ОЗУ: gdsp хранит число слов в стеке данных гостя
+; @does  (0 — пуст); снимок DS — байты [gdsbase, gdsbase + gdsp * 8).
+: gdspaddr
+  0x90A08 ;
+
+; @method grspaddr ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес 0x90A10, клетка grsp — слов в RS гостя
+; @does  Раскладка ОЗУ: grsp хранит число слов в стеке возвратов гостя
+; @does  (0 — пуст); снимок RS — байты [grsbase, grsbase + grsp * 8).
+: grspaddr
+  0x90A10 ;
+
+; @method keyok ( -- c 1 | 0 )
+; @in    нет (байт входа читается из stdin, KEY)
+; @out   pair: c и флаг 1 — прочитан байт; либо 0 без байта — EOF
+; @does  Читает байт входа инструмента (KEY): EOF даёт только флаг 0,
+; @does  байт — c и флаг 1; дубль кирпича keyok ассемблера (asmmem.ubrk)
+; @does  — ветви изолированы (CHARTER.txt, п. 2); кирпич imgstep
+; @does  главного файла emu.ubrk.
+; @depends KEY
+: keyok
+  KEY DUP -1 EQ IF DROP 0 EXIT THEN 1 ;
+
+; @method imgroom ( cur -- flag )
+; @in    cur: слово — адрес узла следующего байта образа гостя
+; @out   flag: слово — 1: байт влезает (cur < gramlimit); 0: ОЗУ гостя
+; @out   полно — ловушка 7
+; @does  Проверка ёмкости образа гостя перед записью байта: вход сверх
+; @does  512 КиБ обязан закончиться ловушкой 7 гостя до начала
+; @does  исполнения (SPEC/L4-SELFHOST.txt, раздел 5Б); кирпич imgstep
+; @does  главного файла emu.ubrk.
+; @depends gramlimit, LTU
+: imgroom
+  gramlimit LTU ;
+
+; @method imgput ( cur c -- cur' )
+; @in    cur: слово — адрес узла следующего байта образа гостя
+; @in    c: слово — прочитанный байт входа 0..255
+; @out   cur': слово — адрес узла следующего байта после записи
+; @does  Записывает байт c образа гостя по адресу узла cur (STORE8)
+; @does  и возвращает cur + 1; кирпич imgstep главного файла emu.ubrk.
+; @depends OVER, STORE8, ADD
+: imgput
+  OVER STORE8 1 ADD ;
+
+; @method gloadbyte ( a -- b )
+; @in    a: слово — адрес гостя
+; @out   b: слово — байт ОЗУ гостя 0..255
+; @does  Читает байт ОЗУ гостя (SPEC/L4-SELFHOST.txt, раздел 5Б: адрес
+; @does  гостя a -> grambase + a): a >= gramsize — ловушка 7 гостя
+; @does  (STOP, код 7) прежде сложения с базой — перенос слова при
+; @does  a + grambase ошибочно прошёл бы проверку по пределу; кирпич
+; @does  декодера (dec.ubrk) и обработчиков группы «память» (подшаг 4).
+; @depends gramsize, LTU, not, grambase, ADD, LOAD8, STOP
+: gloadbyte
+  DUP gramsize LTU not IF DROP 7 STOP THEN
+  grambase ADD LOAD8 ;
+
+; Клетки чтения слова гостя: gi — индекс байта 0..8, gw — накопленное
+; значение, ga — адрес гостя младшего байта (gloadword).
+var gi
+var gw
+var ga
+
+; @method gwstep ( -- done )
+; @in    нет (клетки gi, gw, ga — состояние чтения слова)
+; @out   done: слово — 0: байт прочитан и накоплен; 1: все восемь байтов
+; @out   прочитаны
+; @does  Один шаг чтения слова ОЗУ гостя (как load_word эталона,
+; @does  t0.uvm.core): байт по адресу гостя ga + gi — gloadbyte (ловушка
+; @does  7 вне ОЗУ гостя), gw = gw + байт << 8 * gi, gi + 1; кирпич
+; @does  gloadword.
+; @depends gi, ga, gloadbyte, gw, MUL, SHL, ADD, STORE64, LOAD64, GEU, IF
+: gwstep
+  gi LOAD64 8 GEU IF 1 EXIT THEN
+  ga LOAD64 gi LOAD64 ADD gloadbyte
+  gi LOAD64 8 MUL SHL
+  gw LOAD64 ADD gw STORE64
+  gi LOAD64 1 ADD gi STORE64
+  0 ;
+
+; @method gloadword ( a -- w )
+; @in    a: слово — адрес гостя младшего байта слова
+; @out   w: слово — 64-битное слово ОЗУ гостя (байты little-endian)
+; @does  Читает восемь байтов LE из ОЗУ гостя (проверка каждого байта —
+; @does  gloadbyte, ловушка 7): ga = a, gi = 0, gw = 0, затем gwstep до
+; @does  готовности; кирпич декодера — поле imm64 (dec.ubrk) и будущий
+; @does  обработчик LOAD64 (подшаг 4).
+; @depends ga, gi, gw, gwstep
+: gloadword
+  ga STORE64 0 gi STORE64 0 gw STORE64
+  BEGIN gwstep UNTIL
+  gw LOAD64 ;
+
+; @method greset ( -- )
+; @in    нет
+; @out   нет; клетки gpc = 0, gdsp = 0, grsp = 0
+; @does  Начальное состояние машины гостя (SPEC/L0-UVM.txt, раздел 2:
+; @does  PC = 0, DS и RS пусты) после загрузки образа; кирпич main
+; @does  главного файла emu.ubrk.
+; @depends gpcaddr, gdspaddr, grspaddr, STORE64
+: greset
+  0 gpcaddr STORE64
+  0 gdspaddr STORE64
+  0 grspaddr STORE64 ;
