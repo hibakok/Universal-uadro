@@ -4,7 +4,9 @@
 # @branch  t0.uvm.integration
 # @desc    Интеграционные программы Этапа 1: «вывод символа», арифметика,
 # @desc    вложенные CALL/RET — образы исполняются целиком через
-# @desc    run_image и cli (SPEC/L0-UVM.txt, ROADMAP.txt Этап 1).
+# @desc    run_image и cli (SPEC/L0-UVM.txt, ROADMAP.txt Этап 1);
+# @desc    «вывод символа через порт» — DEVWR в CON_TX шины устройств
+# @desc    (Этап 5, подшаг 5.2, SPEC/L0-UVM.txt, 6А.2-6А.4).
 
 """Интеграционные программы Этапа 1 (ветвь t0.uvm.integration).
 
@@ -19,7 +21,10 @@
 программы исходниками .uasm в src/ (ветвь t0.uasm.integration):
 «вывод символа» и «арифметика» — байт в байт с этими эталонами,
 «вложенные CALL/RET» — метками, без NOP-выравнивания, с тем же
-поведением.
+поведением. «Вывод символа через порт» (подшаг 5.2) пишет байт
+инструкцией DEVWR в порт CON_TX (0x01): стандартный набор устройств —
+консоль и таймер — привязывает run_image (SPEC, 6А.4); исходник —
+src/hello_dev.uasm (ветвь t0.uasm.integration).
 """
 
 import contextlib
@@ -77,6 +82,19 @@ def prog_nested_calls():
     parts += [0x01, tk.imm64(222),  # 90: PUSH 222
               0x44]                 # 99: RET
     return tk.image_of(parts)
+
+
+# @method prog_char_output_dev() -> bytes
+# @in    нет
+# @out   image: bytes — образ программы «вывод символа через порт»
+# @does  Выводит "H" записью в порт CON_TX шины устройств и завершается
+# @does  HALT 0: PUSH 72, PUSH 0x01, DEVWR, HALT 0 (SPEC, 6А.2-6А.3);
+# @does  эталон исходника src/hello_dev.uasm — байт в байт.
+def prog_char_output_dev():
+    return tk.image_of([0x01, tk.imm64(72),   # 0:  PUSH 'H'
+                        0x01, tk.imm64(1),    # 9:  PUSH 0x01 (CON_TX)
+                        0x53,                 # 18: DEVWR
+                        0x45, tk.imm64(0)])   # 19: HALT 0
 
 
 class TestCharOutput(unittest.TestCase):
@@ -148,6 +166,33 @@ class TestNestedCalls(unittest.TestCase):
         code, out = tk.run_via_cli(prog_nested_calls())
         self.assertEqual(code, 0)
         self.assertEqual(out, b"!")
+
+
+class TestCharOutputViaPort(unittest.TestCase):
+    """«Вывод символа через порт»: DEVWR в CON_TX (v0.3, 6А.2-6А.4)."""
+
+    # @method test_run_image_outputs() -> None
+    # @in    нет
+    # @out   нет
+    # @does  run_image привязывает стандартный набор (консоль): DEVWR
+    # @does  в CON_TX выводит "H", код 0, стек пуст.
+    def test_run_image_outputs(self):
+        out = tk.FakeStream()
+        with contextlib.redirect_stdout(out):
+            m, code = rn.run_image(prog_char_output_dev())
+        self.assertEqual(code, 0)
+        self.assertEqual(out.buffer.getvalue(), b"H")
+        self.assertEqual(tk.stack_of(m), [])
+
+    # @method test_cli_outputs() -> None
+    # @in    нет
+    # @out   нет
+    # @does  cli: код 0, в stdout — "H" (привязка набора — в run_image,
+    # @does  от cli ничего не зависит).
+    def test_cli_outputs(self):
+        code, out = tk.run_via_cli(prog_char_output_dev())
+        self.assertEqual(code, 0)
+        self.assertEqual(out, b"H")
 
 
 if __name__ == "__main__":
