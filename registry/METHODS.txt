@@ -4,10 +4,10 @@
 Файлы и описания ветви — registry/<ветвь>/INDEX.txt, карточки
 методов исходного файла — registry/<ветвь>/<файл>.txt.
 
-ВЕТВЬ l1.uvm.emu [слой L1] — файлов: 15, методов: 155
+ВЕТВЬ l1.uvm.emu [слой L1] — файлов: 16, методов: 164
   индекс: registry/l1.uvm.emu/INDEX.txt
 
-ВЕТВЬ l2.uasm.assemble [слой L2] — файлов: 13, методов: 234
+ВЕТВЬ l2.uasm.assemble [слой L2] — файлов: 13, методов: 240
   индекс: registry/l2.uasm.assemble/INDEX.txt
 
 ВЕТВЬ l2.uasm.disasm [слой L2] — файлов: 3, методов: 74
@@ -19,7 +19,7 @@
 ВЕТВЬ t0.ubrick.integration [слой L3] — файлов: 4, методов: 10
   индекс: registry/t0.ubrick.integration/INDEX.txt
 
-ВЕТВЬ t0.infra.registry [слой T0] — файлов: 5, методов: 73
+ВЕТВЬ t0.infra.registry [слой T0] — файлов: 5, методов: 83
   индекс: registry/t0.infra.registry/INDEX.txt
 
 ВЕТВЬ t0.infra.tests [слой T0] — файлов: 3, методов: 22
@@ -89,4 +89,4 @@
   индекс: registry/t0.uvm.table/INDEX.txt
 
 ВСЕГО ВЕТВЕЙ: 28
-ВСЕГО МЕТОДОВ: 1336
+ВСЕГО МЕТОДОВ: 1361

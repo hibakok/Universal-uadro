@@ -13,16 +13,22 @@
             registry/METHODS.txt, индексы ветвей
             registry/<ветвь>/INDEX.txt и карточки по исходным файлам
             (сканирование, план и запись — tools/registry_scan.py).
-- tools/registry_scan.py — методов: 14
+- tools/registry_scan.py — методов: 17
   карточки: registry/t0.infra.registry/registry_scan.txt
   описание: Сканер реестра методов: чтение исходников, план (ветви и
             имена карточек), запись и сверка registry/ на диске; рендер
-            текстов — tools/registry_render.py. Режим --check сверяет
-            реестр без записи.
-- tests/test_registry_scan.py — методов: 20
+            текстов — tools/registry_render.py. Страховка целостности
+            источников: карточка без @does и файл без перевода строки в
+            конце — признаки оборванного при переносе файла, генерация и
+            сверка реестра на них падают (видно в CI первым шагом).
+            Режим --check сверяет реестр без записи.
+- tests/test_registry_scan.py — методов: 27
   карточки: registry/t0.infra.registry/test_registry_scan.txt
   описание: Тесты генератора реестра: разбор аннотаций «# @» и «; @»,
-            план карточек по исходным файлам (рендер и диск —
+            план карточек по исходным файлам и страховка целостности
+            источников — карточка без @does и файл без концевого
+            перевода строки (признаки оборванного при переносе файла)
+            падают в main до генерации реестра (рендер и диск —
             tests/test_registry_scan_render.py).
 - tests/test_registry_scan_render.py — методов: 25
   карточки: registry/t0.infra.registry/test_registry_scan_render.txt
