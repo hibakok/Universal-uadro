@@ -1,0 +1,83 @@
+; @uadro
+; @file    src/l1/dec.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — декодер инструкции гостя (SPEC/L4-SELFHOST.txt,
+; @desc    раздел 5Б, подшаг 2): код — байт по gpc (вне ОЗУ гостя —
+; @desc    ловушка 7), принадлежность — шесть диапазонов SPEC/L0-UVM.txt
+; @desc    (неизвестный код — ловушка 6), признак imm64 — слово сравнений
+; @desc    (как hasimm ассемблера, раздел 5А), поле imm64 — восемь байтов
+; @desc    LE по gpc + 1; переводит gpc на байт за инструкцией целиком —
+; @desc    контракт обработчиков (как decode эталона t0.uvm.decode).
+
+; @method inrange ( c -- flag )
+; @in    c: слово — опкод 0..255
+; @out   flag: слово — 1: код принадлежит одному из шести диапазонов
+; @out   таблицы опкодов; 0: код вне диапазонов — неизвестный опкод
+; @does  Принадлежность кода шести диапазонам SPEC/L0-UVM.txt (раздел 5):
+; @does  0x00-0x07 (стек), 0x10-0x13 (память), 0x20-0x2C (арифметика),
+; @does  0x30-0x35 (сравнения), 0x40-0x45 (переходы), 0x50 (система);
+; @does  внутри диапазонов пустых кодов нет; цепочка сравнений с EXIT,
+; @does  как rowbase дизассемблера (раздел 5); кирпич decode.
+; @depends LEU, LTU, GTU, DUP, DROP, IF, EXIT, THEN
+: inrange
+  DUP 0x07 LEU IF DROP 1 EXIT THEN
+  DUP 0x10 LTU IF DROP 0 EXIT THEN
+  DUP 0x13 LEU IF DROP 1 EXIT THEN
+  DUP 0x20 LTU IF DROP 0 EXIT THEN
+  DUP 0x2C LEU IF DROP 1 EXIT THEN
+  DUP 0x30 LTU IF DROP 0 EXIT THEN
+  DUP 0x35 LEU IF DROP 1 EXIT THEN
+  DUP 0x40 LTU IF DROP 0 EXIT THEN
+  DUP 0x45 LEU IF DROP 1 EXIT THEN
+  DUP 0x50 GTU IF DROP 0 EXIT THEN
+  DROP 1 ;
+
+; @method hasimm ( code -- flag )
+; @in    code: слово — опкод 0..255
+; @out   flag: слово — 1, если за опкодом следует поле imm64, иначе 0
+; @does  Признак поля imm64 без таблицы (SPEC/L4-SELFHOST.txt, раздел 5Б:
+; @does  как hasimm раздела 5А): сравнения и диапазоны — коды 0x01,
+; @does  0x07, 0x40-0x43, 0x45, 0x50 (PUSH, PICK, JMP, JZ, JNZ, CALL,
+; @does  HALT, SYS — SPEC/L0-UVM.txt, раздел 5); кирпич decode.
+; @depends EQ, LTU, LEU, DUP, DROP, IF, EXIT, THEN
+: hasimm
+  DUP 0x01 EQ IF DROP 1 EXIT THEN
+  DUP 0x07 EQ IF DROP 1 EXIT THEN
+  DUP 0x40 LTU IF DROP 0 EXIT THEN
+  DUP 0x43 LEU IF DROP 1 EXIT THEN
+  DUP 0x45 EQ IF DROP 1 EXIT THEN
+  DUP 0x50 EQ IF DROP 1 EXIT THEN
+  DROP 0 ;
+
+; Клетки инструкции гостя: gc — байт опкода, gv — значение поля imm64
+; (0, если поля нет); decode пишет, дерево (tab.ubrk) и обработчики
+; (ops*.ubrk) читают.
+var gc
+var gv
+
+; @method decode ( -- )
+; @in    нет (клетка gpc — PC гостя, указывает на байт опкода)
+; @out   нет; gc — код инструкции, gv — imm64 (0 без поля), gpc — адрес
+; @out   байта за инструкцией целиком (gpc + 1 либо gpc + 9)
+; @does  Декодирует инструкцию гостя по gpc (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5Б; как decode эталона t0.uvm.decode): код — gloadbyte
+; @does  по gpc (вне ОЗУ гостя — ловушка 7, STOP с кодом 7); код вне
+; @does  шести диапазонов — ловушка 6 (STOP с кодом 6, gpc не меняется);
+; @does  hasimm — gloadword по gpc + 1 читает поле imm64 (ловушка 7
+; @does  по байтам), иначе gv = 0; gpc переводится за инструкцию целиком
+; @does  — контракт обработчиков: не-переходы ничего не делают, переходы
+; @does  переписывают gpc сами (подшаги 3-6); кирпич dispatch (tab.ubrk).
+; @depends gpcaddr, gloadbyte, gc, inrange, not, STOP, hasimm, gloadword,
+; @depends gv, ADD, STORE64, LOAD64
+: decode
+  gpcaddr LOAD64 gloadbyte gc STORE64
+  gc LOAD64 inrange not IF 6 STOP THEN
+  gc LOAD64 hasimm
+  IF
+    gpcaddr LOAD64 1 ADD gloadword gv STORE64
+    gpcaddr LOAD64 9 ADD gpcaddr STORE64
+  ELSE
+    0 gv STORE64
+    gpcaddr LOAD64 1 ADD gpcaddr STORE64
+  THEN ;
