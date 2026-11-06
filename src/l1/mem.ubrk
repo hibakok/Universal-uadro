@@ -3,14 +3,15 @@
 ; @layer   L1
 ; @branch  l1.uvm.emu
 ; @desc    Эмулятор UVM — память инструмента: use-включение главного файла
-; @desc    src/l1/emu.ubrk (SPEC/L4-SELFHOST.txt, раздел 5Б, подшаги 1-4).
+; @desc    src/l1/emu.ubrk (SPEC/L4-SELFHOST.txt, раздел 5Б, подшаги 1-6).
 ; @desc    Раскладка ОЗУ инструмента — слова-адреса буферов и клеток
 ; @desc    состояния гостя; кирпичи чтения образа гостя из stdin (keyok,
 ; @desc    imgroom, imgput), доступа к памяти гостя по байтам и словам
 ; @desc    (gloadbyte, gloadword, gstorebyte, gstoreword — ловушка 7 вне
 ; @desc    ОЗУ гостя), стеков гостя (gpush/gpop/gpick — ловушки 2/3,
 ; @desc    rpush/rpop — ловушки 4/5) и начального состояния машины гостя
-; @desc    (greset). Обработчикам CALL/RET (подшаг 6) нужны rpush/rpop.
+; @desc    (greset). Обработчики CALL/RET (подшаг 6, opsjump.ubrk)
+; @desc    используют rpush/rpop.
 
 ; Раскладка ОЗУ инструмента (SPEC/L4-SELFHOST.txt, раздел 5Б): адреса
 ; фиксированы, лимиты — часть контракта; собственный образ инструмента
