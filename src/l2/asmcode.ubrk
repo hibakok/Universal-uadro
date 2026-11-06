@@ -1,0 +1,297 @@
+; @uadro
+; @file    src/l2/asmcode.ubrk
+; @layer   L2
+; @branch  l2.uasm.assemble
+; @desc    Ассемблер uAsm — кодирование записей в буфер образа:
+; @desc    use-включение главного файла src/l2/assemble.ubrk
+; @desc    (SPEC/L4-SELFHOST.txt, раздел 5А, подшаг 6). Собственное
+; @desc    воплощение эталона tools/uasm_encode.py (encode_record,
+; @desc    SPEC/L2-UASM.txt, разделы 5-7): инструкция — байт опкода
+; @desc    и поле imm64 little-endian, DB — по байту на аргумент,
+; @desc    DW — по слову little-endian, DS/DZ — декодированные байты
+; @desc    строкового литерала (DZ добавляет байт 0). Значения
+; @desc    операндов и аргументов — числовые литералы (диапазон
+; @desc    -2^63..2^64-1, отрицательные по модулю 2^64) либо имена
+; @desc    из таблицы символов прохода 1 (ссылки вперёд уже разрешены);
+; @desc    ошибки значений — «uAsm: строка N: текст» и код 16
+; @desc    (fail/failx главного файла). Образ длиннее 64 КиБ — «образ
+; @desc    слишком большой» (контракт инструмента, SPEC/
+; @desc    L4-SELFHOST.txt, раздел 5А; у эталона лимита нет).
+
+; Клетка курса образа: vc — адрес следующего байта буфера образа;
+; проход 2 пишет с imgbase, вывод образа — байты [imgbase, vc).
+var vc
+
+; Клетки скана строкового литерала (emitstr): ep — позиция следующего
+; байта внутри кавычек, ee — адрес закрывающей кавычки (литерал уже
+; проверен разбором строки — dods/dodz asmline.ubrk).
+var ep
+var ee
+
+; Клетка аргументов DB/DW: ai — индекс текущей пары буфера аргументов
+; (0..argc; пара ai — 16 байтов с адреса argbase + ai * 16: адрес
+; и длина слова-аргумента, слова LE).
+var ai
+
+; @method timg ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «образ слишком большой» (UTF-8 + 0)
+; @does  Данные: текст ошибки ёмкости буфера образа (SPEC/
+; @does  L4-SELFHOST.txt, раздел 5А: 64 КиБ); печать — fail.
+text timg "образ слишком большой"
+
+; @method tbyte ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «байт вне диапазона» (UTF-8 + 0)
+; @does  Данные: текст ошибки аргумента DB вне 0..255 (SPEC/L2-UASM.txt,
+; @does  разделы 6 и 7); печать — fail.
+text tbyte "байт вне диапазона"
+
+; @method tunkname ( -- addr )
+; @in    нет
+; @out   addr: слово — адрес строки «неизвестное имя » (UTF-8 + 0)
+; @does  Данные: текст ошибки имени, которого нет в таблице символов,
+; @does  с местом для X в конце (SPEC/L2-UASM.txt, разделы 5-7); печать —
+; @does  failx.
+text tunkname "неизвестное имя "
+
+; @method putbyte ( c -- )
+; @in    c: слово — байт 0..255
+; @out   нет; не возвращается при ошибке: байт не помещается в буфер
+; @out   образа — «образ слишком большой», код 16
+; @does  Пишет байт c в буфер образа по адресу vc (STORE8) и двигает
+; @does  курсор vc на байт (SPEC/L4-SELFHOST.txt, раздел 5А: буфер
+; @does  образа 64 КиБ, imgbase..imglimit); кирпич кодирования всех
+; @does  видов записей.
+; @depends vc, imglimit, timg, fail, LTU, not, STORE8, ADD, STORE64,
+; @depends LOAD64, IF, THEN
+: putbyte
+  vc LOAD64 imglimit LTU not IF timg fail THEN
+  vc LOAD64 STORE8
+  vc LOAD64 1 ADD vc STORE64 ;
+
+; @method putword ( v -- )
+; @in    v: слово — значение 0..2^64-1
+; @out   нет; не возвращается при ошибке: восемь байтов не помещаются
+; @out   в буфер образа — «образ слишком большой», код 16
+; @does  Пишет слово v восемью байтами little-endian в буфер образа
+; @does  с адреса vc (wword) и ставит курсор за восьмым байтом (SPEC/
+; @does  L2-UASM.txt, разделы 5-6: поле imm64 и аргумент DW); кирпич
+; @does  кодирования инструкции и DW.
+; @depends vc, imglimit, timg, fail, wword, GTU, ADD, LOAD64, STORE64,
+; @depends IF, THEN
+: putword
+  vc LOAD64 8 ADD imglimit GTU IF timg fail THEN
+  vc LOAD64 wword vc STORE64 ;
+
+; @method resval ( a l -- v )
+; @in    a: слово — адрес первого байта операнда либо аргумента
+; @in    l: слово — число байтов операнда либо аргумента
+; @out   v: слово — значение 0..2^64-1; не возвращается при ошибке:
+; @out   «литерал вне диапазона», «неизвестное имя X», «плохой
+; @out   литерал X» — код 16
+; @does  Разрешает операнд в значение (SPEC/L2-UASM.txt, разделы 5-6,
+; @does  resolve_value эталона tools/uasm_encode.py): числовой литерал
+; @does  numlit — значение lexv по модулю 2^64 (отрицательные обёрнуты),
+; @does  kind 2 — «литерал вне диапазона»; имя (isname) — symfind
+; @does  по таблице символов, значение записи — loadle; не найдено —
+; @does  «неизвестное имя X» (X — текст операнда; клетки ka/kl хранят
+; @does  кандидата и после неудачного поиска); ни литерал, ни имя —
+; @does  «плохой литерал X»; кирпич кодирования инструкции и аргументов
+; @does  DB/DW.
+; @depends numlit, lexv, isname, symfind, loadle, ka, kl, trange,
+; @depends tbadlitx, tunkname, fail, failx, EQ, not, DUP, DROP, OVER,
+; @depends IF, THEN, EXIT, LOAD64
+: resval
+  OVER OVER numlit
+  DUP 1 EQ IF DROP DROP DROP lexv LOAD64 EXIT THEN
+  DUP 2 EQ IF DROP DROP DROP trange fail THEN
+  DROP
+  OVER OVER isname not IF tbadlitx failx THEN
+  symfind
+  IF loadle EXIT THEN
+  ka LOAD64 kl LOAD64 tunkname failx ;
+
+; @method nextarg ( -- a l )
+; @in    нет (клетка ai — индекс пары; буфер аргументов заполнен
+; @in    splitargs)
+; @out   pair: a и l — адрес и длина слова-аргумента из пары ai
+; @does  Читает пару ai буфера аргументов (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5А: пара — 16 байтов, адрес и длина, слова LE): loadle
+; @does  читает адрес (argbase + ai * 16) и длину (адрес + 8); кирпич
+; @does  шагов кодирования аргументов dbstep и dwstep.
+; @depends ai, argbase, loadle, MUL, ADD, DUP, SWAP, LOAD64
+: nextarg
+  ai LOAD64 16 MUL argbase ADD
+  DUP loadle
+  SWAP 8 ADD loadle ;
+
+; @method dbstep ( -- done )
+; @in    нет (клетки ai, argc — состояние кодирования DB)
+; @out   done: слово — 0: аргумент закодирован байтом, кодирование
+; @out   продолжается; 1: аргументов больше нет (ai достиг argc)
+; @does  Один шаг кодирования DB (SPEC/L2-UASM.txt, раздел 6,
+; @does  encode_db эталона): nextarg даёт слово-аргумент, resval —
+; @does  значение; значение больше 255 — «байт вне диапазона» (fail,
+; @does  код 16; отрицательные уже обёрнуты по модулю 2^64 — резольвер
+; @does  оборачивает, byte_of эталона отклоняет); иначе putbyte пишет
+; @does  байт, ai растёт; кирпич emitdb.
+; @depends ai, argc, nextarg, resval, tbyte, fail, putbyte, GEU, GTU,
+; @depends DUP, IF, THEN, EXIT, ADD, STORE64, LOAD64
+: dbstep
+  ai LOAD64 argc LOAD64 GEU IF 1 EXIT THEN
+  nextarg resval
+  DUP 255 GTU IF tbyte fail THEN
+  putbyte
+  ai LOAD64 1 ADD ai STORE64
+  0 ;
+
+; @method dwstep ( -- done )
+; @in    нет (клетки ai, argc — состояние кодирования DW)
+; @out   done: слово — 0: аргумент закодирован словом, кодирование
+; @out   продолжается; 1: аргументов больше нет (ai достиг argc)
+; @does  Один шаг кодирования DW (SPEC/L2-UASM.txt, раздел 6,
+; @does  encode_dw эталона): nextarg даёт слово-аргумент, resval —
+; @does  значение, putword пишет восемь байтов little-endian; ai
+; @does  растёт; кирпич emitdw.
+; @depends ai, argc, nextarg, resval, putword, GEU, IF, THEN, EXIT,
+; @depends ADD, STORE64, LOAD64
+: dwstep
+  ai LOAD64 argc LOAD64 GEU IF 1 EXIT THEN
+  nextarg resval putword
+  ai LOAD64 1 ADD ai STORE64
+  0 ;
+
+; @method emitdb ( -- )
+; @in    нет (клетки argc и буфер аргументов — аргументы директивы DB)
+; @out   нет; аргументы пишутся в буфер образа по байту (ошибки
+; @out   значений и ёмкости — код 16)
+; @does  Кодирует директиву DB (SPEC/L2-UASM.txt, раздел 6): dbstep
+; @does  от ai = 0 до конца аргументов — по байту на аргумент; пустой
+; @does  DB невозможен (dodb отклонил); кирпич p2step.
+; @depends ai, dbstep, STORE64, BEGIN, UNTIL
+: emitdb
+  0 ai STORE64
+  BEGIN dbstep UNTIL ;
+
+; @method emitdw ( -- )
+; @in    нет (клетки argc и буфер аргументов — аргументы директивы DW)
+; @out   нет; аргументы пишутся в буфер образа по слову (ошибки
+; @out   значений и ёмкости — код 16)
+; @does  Кодирует директиву DW (SPEC/L2-UASM.txt, раздел 6): dwstep
+; @does  от ai = 0 до конца аргументов — по восемь байтов little-endian
+; @does  на аргумент; кирпич p2step.
+; @depends ai, dwstep, STORE64, BEGIN, UNTIL
+: emitdw
+  0 ai STORE64
+  BEGIN dwstep UNTIL ;
+
+; @method esstep ( -- done )
+; @in    нет (клетки ep, ee — состояние скана литерала)
+; @out   done: слово — 0: байт декодирован и записан в буфер образа;
+; @out   1: закрывающая кавычка достигнута (либо неверный escape —
+; @out   невозможен: литерал уже проверен разбором строки)
+; @does  Один шаг декодирования строкового литерала (SPEC/L2-UASM.txt,
+; @does  раздел 4 — escape как parse_string эталона; кодирование —
+; @does  раздел 6): байт «\» (92) требует escape из streval — один
+; @does  декодированный байт (putbyte), позиция растёт на два; прочие
+; @does  байты (многобайтовый UTF-8 дословно, по байту) — putbyte
+; @does  и позиция на один; позиция на закрывающей кавычке (ee) —
+; @does  конец; кирпич emitstr.
+; @depends ep, ee, putbyte, streval, GEU, EQ, LOAD8, LOAD64, ADD,
+; @depends STORE64, DUP, DROP, IF, ELSE, THEN, EXIT
+: esstep
+  ep LOAD64 ee LOAD64 GEU IF 1 EXIT THEN
+  ep LOAD64 LOAD8 DUP 92 EQ
+  IF
+    DROP
+    ep LOAD64 1 ADD LOAD8 streval
+    IF
+      putbyte
+      ep LOAD64 2 ADD ep STORE64
+      0
+    ELSE
+      1
+    THEN
+  ELSE
+    putbyte
+    ep LOAD64 1 ADD ep STORE64
+    0
+  THEN ;
+
+; @method emitstr ( a l -- )
+; @in    a: слово — адрес первого байта литерала (открывающая кавычка)
+; @in    l: слово — число байтов литерала вместе с кавычками
+; @out   нет; декодированные байты пишутся в буфер образа
+; @does  Декодирует строковый литерал в буфер образа (SPEC/L2-UASM.txt,
+; @does  раздел 6): ep — первый байт внутри кавычек (a + 1), ee —
+; @does  закрывающая кавычка (a + l - 1); esstep до конца; кирпичи
+; @does  emitds и emitdz.
+; @depends ep, ee, esstep, ADD, SUB, OVER, STORE64, BEGIN, UNTIL
+: emitstr
+  OVER 1 ADD ep STORE64
+  OVER ADD 1 SUB ee STORE64
+  BEGIN esstep UNTIL ;
+
+; @method emitds ( -- )
+; @in    нет (клетки ra, rl — литерал директивы DS с кавычками)
+; @out   нет; декодированные байты UTF-8 пишутся в буфер образа
+; @does  Кодирует директиву DS (SPEC/L2-UASM.txt, раздел 6): emitstr
+; @does  по литералу ra/rl; кирпич p2step.
+; @depends ra, rl, emitstr, LOAD64
+: emitds
+  ra LOAD64 rl LOAD64 emitstr ;
+
+; @method emitdz ( -- )
+; @in    нет (клетки ra, rl — литерал директивы DZ с кавычками)
+; @out   нет; декодированные байты и байт 0 пишутся в буфер образа
+; @does  Кодирует директиву DZ (SPEC/L2-UASM.txt, раздел 6): emitstr
+; @does  по литералу ra/rl и байт 0x00 за ним; кирпич p2step.
+; @depends ra, rl, emitstr, putbyte, LOAD64
+: emitdz
+  ra LOAD64 rl LOAD64 emitstr
+  0 putbyte ;
+
+; @method emitinstr ( -- )
+; @in    нет (клетки rc — код мнемоники; ra, rl — операнд-текст)
+; @out   нет; инструкция пишется в буфер образа (ошибки значения
+; @out   операнда и ёмкости — код 16, образ не выводится)
+; @does  Кодирует инструкцию (SPEC/L2-UASM.txt, раздел 5,
+; @does  encode_instr эталона): у опкода с полем imm64 (hasimm)
+; @does  значение операнда разрешается прежде байтов (resval — ошибки
+; @does  значений раньше ошибок ёмкости, как у эталона), затем байт
+; @does  опкода (putbyte) и восемь байтов little-endian (putword); у
+; @does  остальных опкодов — только байт опкода (операнда нет — проверил
+; @does  doinstr); кирпич p2step.
+; @depends rc, ra, rl, hasimm, resval, putbyte, putword, LOAD64, IF,
+; @depends ELSE, THEN
+: emitinstr
+  rc LOAD64 hasimm
+  IF
+    ra LOAD64 rl LOAD64 resval
+    rc LOAD64 putbyte
+    putword
+  ELSE
+    rc LOAD64 putbyte
+  THEN ;
+
+; @method p2step ( -- )
+; @in    нет (клетки записи rk, rc, argc, sl, ra, rl — разобранная
+; @in    строка; таблица символов заполнена проходом 1)
+; @out   нет; запись кодируется в буфер образа, курсор vc растёт
+; @does  Обрабатывает запись прохода 2 (SPEC/L2-UASM.txt, раздел 7,
+; @does  pass2 и encode_record эталона): метка и константа байтов
+; @does  не дают; инструкция (rk = 3) — emitinstr; DB (4) — emitdb;
+; @does  DW (5) — emitdw; DS (6) — emitds; DZ (7) — emitdz; кирпич
+; @does  doline главного файла (клетка ps — проход 2).
+; @depends rk, emitinstr, emitdb, emitdw, emitds, emitdz, EQ, DUP,
+; @depends DROP, IF, EXIT, THEN, LOAD64
+: p2step
+  rk LOAD64
+  DUP 1 EQ IF DROP EXIT THEN
+  DUP 2 EQ IF DROP EXIT THEN
+  DUP 3 EQ IF DROP emitinstr EXIT THEN
+  DUP 4 EQ IF DROP emitdb EXIT THEN
+  DUP 5 EQ IF DROP emitdw EXIT THEN
+  DUP 6 EQ IF DROP emitds EXIT THEN
+  DROP emitdz ;
