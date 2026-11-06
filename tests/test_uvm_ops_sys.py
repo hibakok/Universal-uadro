@@ -3,7 +3,8 @@
 # @layer   T0
 # @branch  t0.uvm.ops
 # @desc    Тесты системных вызовов: SYS 0 — чтение байта, SYS 1 — вывод
-# @desc    байта, неизвестный SYS (SPEC/L0-UVM.txt, раздел 6).
+# @desc    байта, SYS 2 — завершение с кодом со стека, неизвестный SYS
+# @desc    (SPEC/L0-UVM.txt, раздел 6).
 
 """Тесты группы «SYS» ветви t0.uvm.ops (tools/uvm_ops_sys.py).
 
@@ -97,15 +98,51 @@ class TestSysRead(unittest.TestCase):
         self.assertEqual(tk.stack_of(m), [ops.EOF_WORD])
 
 
+class TestSysStop(unittest.TestCase):
+    """SYS 2 — завершение с кодом со стека (SPEC, раздел 6)."""
+
+    # @method test_sys2_stops_with_code() -> None
+    # @in    нет
+    # @out   нет
+    # @does  SYS 2 снимает код со стека и поднимает UvmHalt с ним —
+    # @does  нормальная остановка, как HALT imm.
+    def test_sys2_stops_with_code(self):
+        m = tk.small()
+        uc.ds_push(m, 65)
+        self.assertEqual(tk.halt_code(lambda: ops.op_sys(m, 2)), 65)
+        self.assertEqual(tk.stack_of(m), [])
+
+    # @method test_sys2_wraps_code_mod_256() -> None
+    # @in    нет
+    # @out   нет
+    # @does  Код c берётся по модулю 256: 321 -> 65, 256 -> 0.
+    def test_sys2_wraps_code_mod_256(self):
+        m = tk.small()
+        uc.ds_push(m, 321)
+        self.assertEqual(tk.halt_code(lambda: ops.op_sys(m, 2)), 65)
+        uc.ds_push(m, 256)
+        self.assertEqual(tk.halt_code(lambda: ops.op_sys(m, 2)), 0)
+
+    # @method test_sys2_empty_stack_traps() -> None
+    # @in    нет
+    # @out   нет
+    # @does  SYS 2 с пустым стеком — ловушка 2: код снимается со стека
+    # @does  прежде остановки.
+    def test_sys2_empty_stack_traps(self):
+        m = tk.small()
+        self.assertEqual(tk.trap_code(lambda: ops.op_sys(m, 2)),
+                         uc.TRAP_DS_EMPTY)
+
+
 class TestSysUnknown(unittest.TestCase):
     """Неизвестные номера SYS (SPEC, раздел 6)."""
 
     # @method test_unknown_sys_traps() -> None
     # @in    нет
     # @out   нет
-    # @does  SYS с номером вне 0/1 — ловушка 8.
+    # @does  SYS с номером вне 0/1/2 — ловушка 8.
     def test_unknown_sys_traps(self):
-        for bad in (2, uc.WORD_MASK):
+        for bad in (3, uc.WORD_MASK):
             m = tk.small()
             self.assertEqual(
                 tk.trap_code(lambda m=m, bad=bad: ops.op_sys(m, bad)),
