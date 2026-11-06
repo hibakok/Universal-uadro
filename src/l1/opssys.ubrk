@@ -1,0 +1,34 @@
+; @uadro
+; @file    src/l1/opssys.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — SYS-мост 0x50 (SPEC/L0-UVM.txt, раздел 6;
+; @desc    SPEC/L4-SELFHOST.txt, раздел 5Б, подшаг 6): SYS 0 гостя — KEY
+; @desc    узла на DS гостя (stdin инструмента израсходован образом —
+; @desc    всегда признак конца ввода 0xFFFFFFFFFFFFFFFF, как SYS 0
+; @desc    эталона с пустым stdin); SYS 1 — gpop и EMIT (байт вывода —
+; @desc    по модулю 256); SYS 2 — gpop и STOP: нормальная остановка
+; @desc    с кодом гостя; прочий номер — ловушка 8.
+
+; @method sys ( -- )
+; @in    нет (клетка gv — номер системного вызова n; gpc уже переведён
+; @in    декодером за инструкцию)
+; @out   нет; эффект SYS на машине гостя, либо не возвращается (SYS 2)
+; @does  Обработчик SYS n 0x50 — мост к узлу (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5Б): n = 0 — KEY читает stdin узла и кладёт байт (или
+; @does  признак конца ввода 0xFFFFFFFFFFFFFFFF) на DS гостя — образ
+; @does  уже израсходовал stdin, поэтому всегда признак конца, как
+; @does  host_read_byte эталона с пустым stdin; n = 1 — gpop снимает
+; @does  байт гостя (пустой стек — ловушка 2), EMIT выводит его младший
+; @does  байт; n = 2 — gpop снимает код со стека гостя (пустой —
+; @does  ловушка 2), STOP завершает инструмент кодом гостя по модулю
+; @does  256 — нормальная остановка, как HALT imm (op_sys эталона);
+; @does  прочий n — ловушка 8 (STOP с кодом 8); кирпич dsys (tab.ubrk).
+; @depends gv, LOAD64, EQ, DUP, DROP, IF, EXIT, THEN, KEY, gpush, gpop,
+; @depends EMIT, STOP
+: sys
+  gv LOAD64
+  DUP 0 EQ IF DROP KEY gpush EXIT THEN
+  DUP 1 EQ IF DROP gpop EMIT EXIT THEN
+  DUP 2 EQ IF DROP gpop STOP THEN
+  DROP 8 STOP ;
