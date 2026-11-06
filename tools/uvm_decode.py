@@ -17,10 +17,15 @@ decode_at — чистый кирпич: читает по адресу байт
 
 Неизвестный опкод — ловушка 6 (SPEC, разделы 3 и 5); чтение вне ОЗУ —
 ловушка 7 (кирпичи load_byte/load_word ядра t0.uvm.core).
+
+Горячий путь интерпретатора: выборка опкода и поля imm64 встроены
+в тело decode_at (одна проверка границы на каждое чтение, срез байтов
+для imm64) — поведение то же, вызовов меньше; внеграничные обращения
+идут через load_byte с той же ловушкой 7.
 """
 
-from tools.uvm_core import TRAP_BAD_OPCODE, load_byte, load_word, trap
-from tools.uvm_table import entry_by_code
+from tools.uvm_core import TRAP_BAD_OPCODE, TRAP_OOB, load_byte, trap
+from tools.uvm_table import BY_CODE
 
 OPCODE_SIZE = 1  # байт опкода (SPEC, раздел 4)
 IMM_SIZE = 8     # байтов в поле imm64 (SPEC, раздел 4)
@@ -35,17 +40,28 @@ IMM_SIZE = 8     # байтов в поле imm64 (SPEC, раздел 4)
 # @does  Читает инструкцию по адресу: опкод из ОЗУ, при наличии поля imm64
 # @does  — восемь байтов little-endian за ним; неизвестный опкод —
 # @does  ловушка 6, выход за границы ОЗУ — ловушка 7; кирпич дизассемблера
-# @does  (Этап 2) и отладчика (Этап 11).
-# @depends load_byte, load_word, trap, entry_by_code
+# @does  (Этап 2) и отладчика (Этап 11). Горячий путь интерпретатора:
+# @does  опкод и imm64 читаются встроенными срезами, поле на границе
+# @does  ОЗУ — побайтово через load_byte (ловушка 7 на первом байте
+# @does  вне ОЗУ, как раньше).
+# @depends load_byte, trap, BY_CODE
 def decode_at(m, addr):
-    opcode = load_byte(m, addr)
-    entry = entry_by_code(opcode)
+    ram = m.ram
+    if not 0 <= addr < len(ram):
+        trap(TRAP_OOB)
+    entry = BY_CODE.get(ram[addr])
     if entry is None:
         trap(TRAP_BAD_OPCODE)
-    if entry[3]:
-        imm = load_word(m, addr + OPCODE_SIZE)
-        return entry, imm, addr + OPCODE_SIZE + IMM_SIZE
-    return entry, 0, addr + OPCODE_SIZE
+    if not entry[3]:
+        return entry, 0, addr + OPCODE_SIZE
+    end = addr + OPCODE_SIZE + IMM_SIZE
+    if end <= len(ram):
+        imm = int.from_bytes(ram[addr + OPCODE_SIZE:end], "little")
+        return entry, imm, end
+    imm = 0
+    for i in range(IMM_SIZE):
+        imm |= load_byte(m, addr + OPCODE_SIZE + i) << (8 * i)
+    return entry, imm, end
 
 
 # @method decode(m) -> tuple
