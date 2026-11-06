@@ -19,26 +19,31 @@
             гостя в stdin (KEY), выход — вывод программы гостя (EMIT),
             код завершения — код гостя: imm HALT по модулю 256 либо код
             ловушки 1-8 (SPEC/L4-SELFHOST.txt, разделы 4 и 5Б). Подшаги
-            1-2: раскладка и чтение образа гостя (mem.ubrk: ловушка 7
+            1-4: раскладка и чтение образа гостя (mem.ubrk: ловушка 7
             при входе длиннее 512 КиБ — код 7, вывод пуст), клетки
             машины гостя (greset), декодер (dec.ubrk: шесть диапазонов,
             поле imm64, ловушки 6/7), дерево диапазонов (tab.ubrk) и
-            цикл «decode dispatch»: обработчики NOP (opsstack.ubrk) и
-            HALT (opsjump.ubrk) — несколько NOP и HALT imm дают код imm;
-            остальные группы опкодов — ловушка 6 (заготовка подшагов
-            3-6: стеки, память, арифметика и сравнения, переходы и
-            SYS-мост); use-включения — SPEC/L3-UBRICK.txt, раздел 3.
-- src/l1/mem.ubrk — методов: 17
+            цикл «decode dispatch»: обработчики NOP и группы «стек»
+            целиком (opsstack.ubrk: PUSH/DROP/DUP/SWAP/OVER/ROT/PICK —
+            кирпичи gpush/gpop/gpick, ловушки 2/3), группы «память»
+            (opsmem.ubrk: LOAD8/LOAD64/STORE8/STORE64 —
+            gloadbyte/gloadword/gstorebyte/ gstoreword, ловушка 7) и
+            HALT (opsjump.ubrk); rpush/rpop (ловушки 4/5) ждут
+            обработчиков CALL/RET (подшаг 6); арифметика и сравнения,
+            переходы и SYS-мост — ловушка 6 (заготовка подшагов 5-6);
+            use-включения — SPEC/L3-UBRICK.txt, раздел 3.
+- src/l1/mem.ubrk — методов: 25
   карточки: registry/l1.uvm.emu/mem.txt
   описание: Эмулятор UVM — память инструмента: use-включение главного
             файла src/l1/emu.ubrk (SPEC/L4-SELFHOST.txt, раздел 5Б,
-            подшаги 1-2). Раскладка ОЗУ инструмента — слова-адреса
+            подшаги 1-4). Раскладка ОЗУ инструмента — слова-адреса
             буферов и клеток состояния гостя; кирпичи чтения образа
             гостя из stdin (keyok, imgroom, imgput), доступа к памяти
-            гостя по байтам (gloadbyte, gloadword — ловушка 7 вне ОЗУ
-            гостя) и начального состояния машины гостя (greset). Стеки
-            гостя (gpush/gpop/gpick, rpush/ rpop) — подшаг 3; записи в
-            память гостя — подшаг 4.
+            гостя по байтам и словам (gloadbyte, gloadword, gstorebyte,
+            gstoreword — ловушка 7 вне ОЗУ гостя), стеков гостя
+            (gpush/gpop/gpick — ловушки 2/3, rpush/rpop — ловушки 4/5) и
+            начального состояния машины гостя (greset). Обработчикам
+            CALL/RET (подшаг 6) нужны rpush/rpop.
 - src/l1/opsjump.ubrk — методов: 1
   карточки: registry/l1.uvm.emu/opsjump.txt
   описание: Эмулятор UVM — обработчики группы «переходы» 0x40-0x45
@@ -46,21 +51,30 @@
             5Б): подшаг 2 — HALT; JMP, JZ, JNZ, CALL, RET — подшаг 6
             (переходы переписывают gpc сами, CALL кладёт адрес возврата
             на RS гостя — gpc после decode).
-- src/l1/opsstack.ubrk — методов: 1
+- src/l1/opsmem.ubrk — методов: 4
+  карточки: registry/l1.uvm.emu/opsmem.txt
+  описание: Эмулятор UVM — обработчики группы «память» 0x10-0x13 (SPEC/
+            L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
+            подшаг 4 — LOAD8, LOAD64, STORE8, STORE64; кирпичи памяти
+            гостя — mem.ubrk (gloadbyte, gloadword, gstorebyte,
+            gstoreword), имена обработчиков — мнемоники строчными.
+- src/l1/opsstack.ubrk — методов: 8
   карточки: registry/l1.uvm.emu/opsstack.txt
   описание: Эмулятор UVM — обработчики группы «стек» 0x00-0x07 (SPEC/
             L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
-            подшаг 2 — NOP; PUSH, DROP, DUP, SWAP, OVER, ROT, PICK —
-            подшаг 3 (стеки гостя, кирпичи mem.ubrk).
+            подшаги 2 и 3 — все восемь кодов группы: NOP, PUSH, DROP,
+            DUP, SWAP, OVER, ROT, PICK; кирпичи стеков гостя — mem.ubrk
+            (gpush/gpop/gpick), имена обработчиков — мнемоники
+            строчными.
 - src/l1/tab.ubrk — методов: 7
   карточки: registry/l1.uvm.emu/tab.txt
   описание: Эмулятор UVM — дерево диапазонов: таблица обработчиков
-            (SPEC/ L4-SELFHOST.txt, раздел 5Б, подшаг 2): dispatch —
+            (SPEC/ L4-SELFHOST.txt, раздел 5Б, подшаги 2-4): dispatch —
             вложенные IF по шести диапазонам SPEC/L0-UVM.txt (раздел 5),
             внутри — слова групп, по коду — CALL обработчика (ops*.ubrk,
-            по файлу на группу, как t0.uvm.ops); коды без обработчика —
-            ловушка 6: заготовка подшагов 3-6 (стеки, память, арифметика
-            и сравнения, переходы и SYS).
+            по файлу на группу, как t0.uvm.ops): «стек» и «память» — все
+            коды групп; арифметика, сравнения, переходы (кроме HALT) и
+            SYS — подшаги 5-6, пока ловушка 6.
 - tests/test_l1_emu_dec.py — методов: 10
   карточки: registry/l1.uvm.emu/test_l1_emu_dec.txt
   описание: Тесты подшага 2 ветви l1.uvm.emu — декодер и остановка
@@ -88,3 +102,18 @@
             начала исполнения: код 7, вывод пуст (паритет кода с
             эталоном load_image); прогон — тест-кирпич run_saved с
             сохранением машины (t0.infra.tests).
+- tests/test_l1_emu_ops.py — методов: 19
+  карточки: registry/l1.uvm.emu/test_l1_emu_ops.txt
+  описание: Тесты подшагов 3-4 ветви l1.uvm.emu — стеки и память гостя
+            (src/l1/mem.ubrk, opsstack.ubrk, opsmem.ubrk, tab.ubrk;
+            SPEC/L4-SELFHOST.txt, раздел 5Б): обработчики группы «стек»
+            целиком (PUSH/DROP/DUP/SWAP/OVER/ROT/PICK — снимок DS гостя
+            по раскладке, ловушки 2/3 — пустой стек, глубина PICK вне
+            стека, граница ёмкости 256/257 слов) и группы «память»
+            (LOAD8/LOAD64/STORE8/STORE64 — байты ОЗУ гостя по раскладке,
+            младший байт STORE8, расширение нулями LOAD8, порядок LE,
+            ловушка 7: адрес и пересечение границы последним словом);
+            паритет с эталоном на машине гостя (код, стек DS, байты
+            ОЗУ). rpush/rpop (ловушки 4/5) прогоном не покрываются:
+            guest-код не достигает RS без CALL/RET — покрывают подшаги
+            6-7.
