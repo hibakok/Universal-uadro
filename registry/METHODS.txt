@@ -19,6 +19,9 @@
 ВЕТВЬ t0.ubrick.integration [слой L3] — файлов: 4, методов: 10
   индекс: registry/t0.ubrick.integration/INDEX.txt
 
+ВЕТВЬ l2.selfhost [слой T0] — файлов: 1, методов: 14
+  индекс: registry/l2.selfhost/INDEX.txt
+
 ВЕТВЬ t0.infra.registry [слой T0] — файлов: 5, методов: 83
   индекс: registry/t0.infra.registry/INDEX.txt
 
@@ -88,5 +91,5 @@
 ВЕТВЬ t0.uvm.table [слой T0] — файлов: 2, методов: 16
   индекс: registry/t0.uvm.table/INDEX.txt
 
-ВСЕГО ВЕТВЕЙ: 28
-ВСЕГО МЕТОДОВ: 1361
+ВСЕГО ВЕТВЕЙ: 29
+ВСЕГО МЕТОДОВ: 1375
