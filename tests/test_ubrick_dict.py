@@ -54,6 +54,7 @@ GOLDEN_ALIASES = (
     ("EXIT", "RET"),
     ("BYE", "HALT 0"),
     ("QUIT", "HALT 16"),
+    ("STOP", "SYS 2"),
 )
 
 GOLDEN_DERIVED = (
@@ -141,14 +142,14 @@ class TestPrimitives(unittest.TestCase):
 
 
 class TestAliases(unittest.TestCase):
-    """Группа «псевдонимы» (SPEC, раздел 4.1: 5 имён)."""
+    """Группа «псевдонимы» (SPEC, раздел 4.1: 6 имён)."""
 
-    # @method test_count_is_5() -> None
+    # @method test_count_is_6() -> None
     # @in    нет
     # @out   нет
-    # @does  Псевдонимов ровно 5: EMIT, KEY, EXIT, BYE, QUIT.
-    def test_count_is_5(self):
-        self.assertEqual(len(alias_names()), 5)
+    # @does  Псевдонимов ровно 6: EMIT, KEY, EXIT, BYE, QUIT, STOP.
+    def test_count_is_6(self):
+        self.assertEqual(len(alias_names()), 6)
         self.assertEqual(sorted(alias_names()),
                          sorted(rec[0] for rec in GOLDEN_ALIASES))
 
@@ -333,6 +334,7 @@ class TestFind(unittest.TestCase):
         self.assertEqual(find_word("EMIT"), ("alias", "SYS 1"))
         self.assertEqual(find_word("BYE"), ("alias", "HALT 0"))
         self.assertEqual(find_word("QUIT"), ("alias", "HALT 16"))
+        self.assertEqual(find_word("STOP"), ("alias", "SYS 2"))
 
     # @method test_find_derived() -> None
     # @in    нет
@@ -368,11 +370,11 @@ class TestLists(unittest.TestCase):
     # @method test_word_names_count_and_unique() -> None
     # @in    нет
     # @out   нет
-    # @does  Всего 54 слова (29 + 5 + 20), без повторов.
+    # @does  Всего 55 слов (29 + 6 + 20), без повторов.
     def test_word_names_count_and_unique(self):
         names = word_names()
-        self.assertEqual(len(names), 54)
-        self.assertEqual(len(set(names)), 54)
+        self.assertEqual(len(names), 55)
+        self.assertEqual(len(set(names)), 55)
 
     # @method test_word_names_order() -> None
     # @in    нет
