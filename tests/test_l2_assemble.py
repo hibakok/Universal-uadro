@@ -15,7 +15,8 @@
 # @desc    и imm64); разбор строки (паритет с эталоном) —
 # @desc    tests/test_l2_assemble_line.py, символы и адреса —
 # @desc    tests/test_l2_assemble_sym.py, кодирование значений —
-# @desc    tests/test_l2_assemble_code.py.
+# @desc    tests/test_l2_assemble_code.py, золотой набор и закрытие
+# @desc    ветви — tests/test_l2_assemble_gold.py.
 
 """Тесты подшагов 1-2 ветви l2.uasm.assemble (SPEC/L4-SELFHOST.txt, раздел 5А).
 
