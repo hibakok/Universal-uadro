@@ -19,18 +19,17 @@
             гостя в stdin (KEY), выход — вывод программы гостя (EMIT),
             код завершения — код гостя: imm HALT по модулю 256 либо код
             ловушки 1-8 (SPEC/L4-SELFHOST.txt, разделы 4 и 5Б). Подшаги
-            1-4: раскладка и чтение образа гостя (mem.ubrk: ловушка 7
+            1-6: раскладка и чтение образа гостя (mem.ubrk: ловушка 7
             при входе длиннее 512 КиБ — код 7, вывод пуст), клетки
             машины гостя (greset), декодер (dec.ubrk: шесть диапазонов,
             поле imm64, ловушки 6/7), дерево диапазонов (tab.ubrk) и
-            цикл «decode dispatch»: обработчики NOP и группы «стек»
-            целиком (opsstack.ubrk: PUSH/DROP/DUP/SWAP/OVER/ROT/PICK —
-            кирпичи gpush/gpop/gpick, ловушки 2/3), группы «память»
-            (opsmem.ubrk: LOAD8/LOAD64/STORE8/STORE64 —
-            gloadbyte/gloadword/gstorebyte/ gstoreword, ловушка 7) и
-            HALT (opsjump.ubrk); rpush/rpop (ловушки 4/5) ждут
-            обработчиков CALL/RET (подшаг 6); арифметика и сравнения,
-            переходы и SYS-мост — ловушка 6 (заготовка подшагов 5-6);
+            цикл «decode dispatch»: обработчики всех 38 опкодов v0.1 —
+            группы «стек» (opsstack.ubrk), «память» (opsmem.ubrk),
+            «арифметика» (opsarith.ubrk), «сравнения» (opscmp.ubrk),
+            «переходы» (opsjump.ubrk: JMP/JZ/JNZ/CALL/RET — кирпичи
+            rpush/rpop) и SYS-мост (opssys.ubrk: SYS 0/1/2, прочий номер
+            — ловушка 8); остаются подшаги 7 (золотой набор и сквозной
+            прогон — SPEC/L4-SELFHOST.txt, разделы 5Б и 6);
             use-включения — SPEC/L3-UBRICK.txt, раздел 3.
 - src/l1/mem.ubrk — методов: 25
   карточки: registry/l1.uvm.emu/mem.txt
@@ -44,13 +43,40 @@
             (gpush/gpop/gpick — ловушки 2/3, rpush/rpop — ловушки 4/5) и
             начального состояния машины гостя (greset). Обработчикам
             CALL/RET (подшаг 6) нужны rpush/rpop.
-- src/l1/opsjump.ubrk — методов: 1
+- src/l1/opsarith.ubrk — методов: 13
+  карточки: registry/l1.uvm.emu/opsarith.txt
+  описание: Эмулятор UVM — обработчики группы «арифметика» 0x20-0x2C
+            (SPEC/ L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел
+            5Б): подшаг 5 — ADD, SUB, MUL, UDIV, UMOD, NEG, SHL, SHR,
+            SAR, AND, OR, XOR, INV. Бинарные снимают два слова стека
+            гостя (gpop), вычисляют на стеке узла примитивами uBrick (та
+            же семантика по модулю 2^64), кладут результат обратно
+            (gpush); делитель 0 у UDIV/UMOD — ловушка 1 гостя; имена
+            обработчиков — мнемоники строчными. Коммутативные операции
+            идут без SWAP (порядок операндов не важен), некоммутативные
+            — SWAP: после gpop gpop на стеке узла [b, a] (a — вершина),
+            SWAP даёт порядок ( a b ).
+- src/l1/opscmp.ubrk — методов: 6
+  карточки: registry/l1.uvm.emu/opscmp.txt
+  описание: Эмулятор UVM — обработчики группы «сравнения» 0x30-0x35
+            (SPEC/ L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел
+            5Б): подшаг 5 — EQ, NEQ, LTU, GTU, LEU, GEU: gpop снимает
+            пару слов гостя, сравнение узла даёт флаг 1/0, gpush кладёт
+            флаг в DS гостя; сравнения беззнаковые (слова — целые без
+            знака), EQ/NEQ коммутативны (без SWAP), порядок остальных —
+            SWAP: после gpop gpop на стеке узла [b, a] (a — вершина),
+            SWAP даёт порядок ( a b ); имена — мнемоники строчными.
+- src/l1/opsjump.ubrk — методов: 6
   карточки: registry/l1.uvm.emu/opsjump.txt
   описание: Эмулятор UVM — обработчики группы «переходы» 0x40-0x45
-            (SPEC/ L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел
-            5Б): подшаг 2 — HALT; JMP, JZ, JNZ, CALL, RET — подшаг 6
-            (переходы переписывают gpc сами, CALL кладёт адрес возврата
-            на RS гостя — gpc после decode).
+            (SPEC/ L0-UVM.txt, разделы 4-5; SPEC/L4-SELFHOST.txt, раздел
+            5Б): подшаги 2 и 6 — JMP, JZ, JNZ, CALL, RET, HALT. Переходы
+            переписывают gpc сами (декодер уже перевёл его за инструкцию
+            целиком — контракт обработчиков, как t0.uvm.exec), CALL
+            кладёт адрес возврата на RS гостя (rpush — ловушка 5) прежде
+            перехода, RET снимает его (rpop — ловушка 4); адрес перехода
+            за пределы ОЗУ гостя ловит следующий decode — gloadbyte по
+            gpc вне ОЗУ, ловушка 7 (как выборка эталона).
 - src/l1/opsmem.ubrk — методов: 4
   карточки: registry/l1.uvm.emu/opsmem.txt
   описание: Эмулятор UVM — обработчики группы «память» 0x10-0x13 (SPEC/
@@ -66,15 +92,25 @@
             DUP, SWAP, OVER, ROT, PICK; кирпичи стеков гостя — mem.ubrk
             (gpush/gpop/gpick), имена обработчиков — мнемоники
             строчными.
+- src/l1/opssys.ubrk — методов: 1
+  карточки: registry/l1.uvm.emu/opssys.txt
+  описание: Эмулятор UVM — SYS-мост 0x50 (SPEC/L0-UVM.txt, раздел 6;
+            SPEC/L4-SELFHOST.txt, раздел 5Б, подшаг 6): SYS 0 гостя —
+            KEY узла на DS гостя (stdin инструмента израсходован образом
+            — всегда признак конца ввода 0xFFFFFFFFFFFFFFFF, как SYS 0
+            эталона с пустым stdin); SYS 1 — gpop и EMIT (байт вывода —
+            по модулю 256); SYS 2 — gpop и STOP: нормальная остановка с
+            кодом гостя; прочий номер — ловушка 8.
 - src/l1/tab.ubrk — методов: 7
   карточки: registry/l1.uvm.emu/tab.txt
   описание: Эмулятор UVM — дерево диапазонов: таблица обработчиков
-            (SPEC/ L4-SELFHOST.txt, раздел 5Б, подшаги 2-4): dispatch —
+            (SPEC/ L4-SELFHOST.txt, раздел 5Б, подшаги 2-6): dispatch —
             вложенные IF по шести диапазонам SPEC/L0-UVM.txt (раздел 5),
             внутри — слова групп, по коду — CALL обработчика (ops*.ubrk,
-            по файлу на группу, как t0.uvm.ops): «стек» и «память» — все
-            коды групп; арифметика, сравнения, переходы (кроме HALT) и
-            SYS — подшаги 5-6, пока ловушка 6.
+            по файлу на группу, как t0.uvm.ops): все 38 опкодов v0.1 —
+            «стек» (opsstack.ubrk), «память» (opsmem.ubrk), «арифметика»
+            (opsarith.ubrk), «сравнения» (opscmp.ubrk), «переходы»
+            (opsjump.ubrk), «система» (opssys.ubrk).
 - tests/test_l1_emu_dec.py — методов: 10
   карточки: registry/l1.uvm.emu/test_l1_emu_dec.txt
   описание: Тесты подшага 2 ветви l1.uvm.emu — декодер и остановка

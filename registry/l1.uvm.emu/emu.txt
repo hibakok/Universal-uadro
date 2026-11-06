@@ -8,19 +8,18 @@
           гостя в stdin (KEY), выход — вывод программы гостя (EMIT), код
           завершения — код гостя: imm HALT по модулю 256 либо код
           ловушки 1-8 (SPEC/L4-SELFHOST.txt, разделы 4 и 5Б). Подшаги
-          1-4: раскладка и чтение образа гостя (mem.ubrk: ловушка 7 при
+          1-6: раскладка и чтение образа гостя (mem.ubrk: ловушка 7 при
           входе длиннее 512 КиБ — код 7, вывод пуст), клетки машины
           гостя (greset), декодер (dec.ubrk: шесть диапазонов, поле
           imm64, ловушки 6/7), дерево диапазонов (tab.ubrk) и цикл
-          «decode dispatch»: обработчики NOP и группы «стек» целиком
-          (opsstack.ubrk: PUSH/DROP/DUP/SWAP/OVER/ROT/PICK — кирпичи
-          gpush/gpop/gpick, ловушки 2/3), группы «память» (opsmem.ubrk:
-          LOAD8/LOAD64/STORE8/STORE64 — gloadbyte/gloadword/gstorebyte/
-          gstoreword, ловушка 7) и HALT (opsjump.ubrk); rpush/rpop
-          (ловушки 4/5) ждут обработчиков CALL/RET (подшаг 6);
-          арифметика и сравнения, переходы и SYS-мост — ловушка 6
-          (заготовка подшагов 5-6); use-включения — SPEC/L3-UBRICK.txt,
-          раздел 3.
+          «decode dispatch»: обработчики всех 38 опкодов v0.1 — группы
+          «стек» (opsstack.ubrk), «память» (opsmem.ubrk), «арифметика»
+          (opsarith.ubrk), «сравнения» (opscmp.ubrk), «переходы»
+          (opsjump.ubrk: JMP/JZ/JNZ/CALL/RET — кирпичи rpush/rpop) и
+          SYS-мост (opssys.ubrk: SYS 0/1/2, прочий номер — ловушка 8);
+          остаются подшаги 7 (золотой набор и сквозной прогон —
+          SPEC/L4-SELFHOST.txt, разделы 5Б и 6); use-включения —
+          SPEC/L3-UBRICK.txt, раздел 3.
 
 МЕТОД imgstep ( cur -- cur' done )
   вход:        cur: слово — адрес узла следующего байта образа гостя
@@ -47,11 +46,11 @@
                0 и пустые стеки (SPEC/L0-UVM.txt, раздел 2), затем цикл
                инструкций — шаг decode (dec.ubrk: код, поле imm64, gpc —
                за инструкцией) + dispatch (tab.ubrk: дерево диапазонов,
-               CALL обработчика) до STOP обработчика — HALT imm либо
-               ловушка гостя; подшаги 5-6 добавят арифметику и
-               сравнения, переходы и SYS-мост (пока ловушка 6; SYS 1
-               гостя — EMIT, SYS 0 — всегда EOF: stdin инструмента
-               израсходован образом); цикл не завершается сам — только
-               STOP (BEGIN AGAIN).
+               CALL обработчика) до STOP обработчика — HALT imm, SYS 2
+               либо ловушка гостя; подшаги 5-6 добавили арифметику и
+               сравнения, переходы и SYS-мост — все группы опкодов
+               исполняются; SYS 1 гостя — EMIT, SYS 0 — всегда EOF:
+               stdin инструмента израсходован образом); цикл не
+               завершается сам — только STOP (BEGIN AGAIN).
   зависимости: grambase, imgstep, DROP, greset, decode, dispatch,
                BEGIN,, UNTIL, AGAIN
