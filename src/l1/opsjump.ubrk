@@ -1,0 +1,20 @@
+; @uadro
+; @file    src/l1/opsjump.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — обработчики группы «переходы» 0x40-0x45 (SPEC/
+; @desc    L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
+; @desc    подшаг 2 — HALT; JMP, JZ, JNZ, CALL, RET — подшаг 6
+; @desc    (переходы переписывают gpc сами, CALL кладёт адрес возврата
+; @desc    на RS гостя — gpc после decode).
+
+; @method halt ( -- )
+; @in    нет (клетка gv — imm инструкции; gpc уже переведён декодером)
+; @out   нет; не возвращается: программа завершается
+; @does  Обработчик HALT imm 0x45 (SPEC/L0-UVM.txt, разделы 3 и 5):
+; @does  нормальное завершение с кодом imm по модулю 256 — код гостя
+; @does  передаётся SYS 2 узла словом STOP (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5Б); кирпич djump (tab.ubrk).
+; @depends gv, STOP
+: halt
+  gv LOAD64 STOP ;
