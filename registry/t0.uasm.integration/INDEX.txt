@@ -16,6 +16,14 @@
             HALT 0 завершает (SPEC/L0-UVM.txt, раздел 6); образ байт в
             байт совпадает с эталоном Этапа 1 —
             tests/test_uvm_integration.py, prog_char_output.
+- src/hello_dev.uasm — методов: 0
+  карточки: registry/t0.uasm.integration/hello_dev.txt
+  описание: Программа «вывод символа через порт»: DEVWR пишет 'H' в порт
+            CON_TX (0x01) шины устройств, HALT 0 завершает
+            (SPEC/L0-UVM.txt, 6А.2-6А.4); стандартный набор (консоль,
+            таймер) привязывает run_image. Эталон образа —
+            tests/test_uvm_integration.py, prog_char_output_dev;
+            закрывает подшаг 5.2 Этапа 5.
 - src/nested_calls.uasm — методов: 0
   карточки: registry/t0.uasm.integration/nested_calls.txt
   описание: Программа «вложенные CALL/RET»: main вызывает sub1, та —
@@ -24,10 +32,12 @@
             переходов — метки прохода 1 (SPEC/L2-UASM.txt, раздел 3),
             NOP-выравнивание эталона Этапа 1 не нужно; поведение —
             tests/test_uvm_integration.py, prog_nested_calls.
-- tests/test_uasm_integration.py — методов: 12
+- tests/test_uasm_integration.py — методов: 15
   карточки: registry/t0.uasm.integration/test_uasm_integration.txt
   описание: Интеграционные программы Этапа 2: исходники src/*.uasm
             собираются командой uasm_cli asm и исполняются uvm_cli;
             «вывод символа» и «арифметика» — байт в байт с эталонами
             Этапа 1, «вложенные CALL/RET» — метками, с тем же поведением
-            (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2).
+            (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2); «вывод символа через
+            порт» — DEVWR в CON_TX, подшаг 5.2 Этапа 5 (SPEC/L0-UVM.txt,
+            6А.2; мнемоники DEVRD/DEVWR — SPEC/L2-UASM.txt v0.2).

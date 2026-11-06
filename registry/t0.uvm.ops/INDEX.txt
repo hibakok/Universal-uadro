@@ -12,6 +12,11 @@
   карточки: registry/t0.uvm.ops/uvm_ops_cmp.txt
   описание: Обработчики опкодов группы «сравнения»: EQ, NEQ, LTU, GTU,
             LEU, GEU (SPEC/L0-UVM.txt, раздел 5).
+- tools/uvm_ops_dev.py — методов: 2
+  карточки: registry/t0.uvm.ops/uvm_ops_dev.txt
+  описание: Обработчики инструкций устройств DEVRD и DEVWR: чтение и
+            запись слова порта через шину (SPEC/L0-UVM.txt, раздел
+            6А.2).
 - tools/uvm_ops_jump.py — методов: 6
   карточки: registry/t0.uvm.ops/uvm_ops_jump.txt
   описание: Обработчики опкодов группы «переходы и остановка»: JMP, JZ,
@@ -38,6 +43,12 @@
   карточки: registry/t0.uvm.ops/test_uvm_ops_cmp.txt
   описание: Тесты обработчиков сравнений: EQ, NEQ, LTU, GTU, LEU, GEU
             (SPEC/L0-UVM.txt, раздел 5).
+- tests/test_uvm_ops_dev.py — методов: 18
+  карточки: registry/t0.uvm.ops/test_uvm_ops_dev.txt
+  описание: Тесты инструкций устройств DEVRD/DEVWR: чтение и запись
+            слова порта, порядок операндов, ловушки 2 и 9, маска слова
+            шины, проводка опкодов 0x52/0x53 через декодер и цикл
+            запуска (SPEC/L0-UVM.txt, 6А.2).
 - tests/test_uvm_ops_jump.py — методов: 14
   карточки: registry/t0.uvm.ops/test_uvm_ops_jump.txt
   описание: Тесты обработчиков переходов и остановки: JMP, JZ, JNZ,

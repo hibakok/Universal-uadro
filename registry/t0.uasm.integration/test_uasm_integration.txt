@@ -2,13 +2,15 @@
 
 Ветвь: t0.uasm.integration
 Слой: T0
-Методов: 12
+Методов: 15
 Генерируется tools/registry_scan.py; вручную не редактировать.
 Описание: Интеграционные программы Этапа 2: исходники src/*.uasm
           собираются командой uasm_cli asm и исполняются uvm_cli; «вывод
           символа» и «арифметика» — байт в байт с эталонами Этапа 1,
           «вложенные CALL/RET» — метками, с тем же поведением
-          (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2).
+          (SPEC/L2-UASM.txt, ROADMAP.txt Этап 2); «вывод символа через
+          порт» — DEVWR в CON_TX, подшаг 5.2 Этапа 5 (SPEC/L0-UVM.txt,
+          6А.2; мнемоники DEVRD/DEVWR — SPEC/L2-UASM.txt v0.2).
 
 МЕТОД repo_root() -> str
   вход:        нет
@@ -76,6 +78,24 @@
   функция:     Раунд-трип на реальной программе (SPEC/L2-UASM.txt,
                раздел 8): assemble(disasm(B)) == B для образа,
                собранного из src/nested_calls.uasm с метками.
+
+МЕТОД test_cli_asm_matches_reference() -> None
+  вход:        нет
+  выход:       нет
+  функция:     Команда asm собирает исходник с мнемоникой DEVWR (SPEC/
+               L2-UASM.txt v0.2: операнда нет) в образ, равный эталону
+               prog_char_output_dev: PUSH 'H', PUSH 0x01, DEVWR, HALT 0.
+
+МЕТОД test_run_image_outputs_h() -> None
+  вход:        нет
+  выход:       нет
+  функция:     run_image (привязка стандартного набора — консоль): код
+               0, в stdout — "H", стек пуст.
+
+МЕТОД test_uvm_cli_outputs_h() -> None
+  вход:        нет
+  выход:       нет
+  функция:     uvm_cli: код 0, в stdout — "H".
 
 МЕТОД test_process_asm_and_run() -> None
   вход:        нет

@@ -13,7 +13,7 @@
 ВЕТВЬ l2.uasm.disasm [слой L2] — файлов: 3, методов: 74
   индекс: registry/l2.uasm.disasm/INDEX.txt
 
-ВЕТВЬ t0.uasm.integration [слой L2] — файлов: 4, методов: 12
+ВЕТВЬ t0.uasm.integration [слой L2] — файлов: 5, методов: 15
   индекс: registry/t0.uasm.integration/INDEX.txt
 
 ВЕТВЬ t0.ubrick.integration [слой L3] — файлов: 4, методов: 10
@@ -25,7 +25,7 @@
 ВЕТВЬ t0.infra.registry [слой T0] — файлов: 5, методов: 83
   индекс: registry/t0.infra.registry/INDEX.txt
 
-ВЕТВЬ t0.infra.tests [слой T0] — файлов: 3, методов: 22
+ВЕТВЬ t0.infra.tests [слой T0] — файлов: 3, методов: 23
   индекс: registry/t0.infra.tests/INDEX.txt
 
 ВЕТВЬ t0.uasm.assemble [слой T0] — файлов: 2, методов: 46
@@ -82,10 +82,10 @@
 ВЕТВЬ t0.uvm.exec [слой T0] — файлов: 2, методов: 12
   индекс: registry/t0.uvm.exec/INDEX.txt
 
-ВЕТВЬ t0.uvm.integration [слой T0] — файлов: 1, методов: 9
+ВЕТВЬ t0.uvm.integration [слой T0] — файлов: 1, методов: 12
   индекс: registry/t0.uvm.integration/INDEX.txt
 
-ВЕТВЬ t0.uvm.ops [слой T0] — файлов: 12, методов: 116
+ВЕТВЬ t0.uvm.ops [слой T0] — файлов: 14, методов: 136
   индекс: registry/t0.uvm.ops/INDEX.txt
 
 ВЕТВЬ t0.uvm.run [слой T0] — файлов: 2, методов: 15
@@ -95,4 +95,4 @@
   индекс: registry/t0.uvm.table/INDEX.txt
 
 ВСЕГО ВЕТВЕЙ: 30
-ВСЕГО МЕТОДОВ: 1418
+ВСЕГО МЕТОДОВ: 1445
