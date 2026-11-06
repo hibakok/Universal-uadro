@@ -4,12 +4,13 @@
 # @branch  l2.uasm.assemble
 # @desc    Тесты подшага 5 ветви l2.uasm.assemble — таблица символов
 # @desc    и проход 1 (src/l2/asmsym.ubrk — запись и поиск имён; слова
-# @desc    p1addr/recsize/p1step/symlist главного файла src/l2/assemble.ubrk):
-# @desc    выход — листинг символов «имя=значение» в порядке определения;
-# @desc    ожидания строит эталон pass1 (tools/uasm_assemble.py) — паритет
-# @desc    с источником истины поведения. Адреса записей всех видов
-# @desc    (инструкция 9/1, DB, DW, DS, DZ — recsize), все 38 мнемоник
-# @desc    с накоплением адресов, ссылки вперёд, метка в конце текста,
+# @desc    p1addr/recsize/p1step главного файла src/l2/assemble.ubrk):
+# @desc    выход — образ UVM (подшаг 6): адреса записей наблюдаемы
+# @desc    значениями ссылок на метки (imm64 переходов), константы —
+# @desc    аргументами DW/DB; ожидания строит эталон assemble
+# @desc    (tools/uasm_assemble.py) — паритет с источником истины
+# @desc    поведения. Размеры записей всех видов (инструкция 9/1, DB,
+# @desc    DW, DS, DZ — recsize), ссылки вперёд, метка в конце текста,
 # @desc    повторные определения (метка/константа в любом порядке),
 # @desc    лимит имени 63 байта («слишком длинное имя» — контракт
 # @desc    инструмента, у эталона лимита нет), дымовые наборы из сотен
@@ -22,15 +23,15 @@
 Проход 1 (SPEC/L2-UASM.txt, раздел 7; SPEC/L4-SELFHOST.txt, раздел 5А):
 каждой записи назначается адрес, метки определяются адресами следующей
 записи, константы — значениями литералов; повторное определение — ошибка.
-Выход собственного ассемблера — листинг «имя=значение» по записи на
-строку, в порядке определения; при ошибке листинг не печатается — только
-диагностическая строка и код 16.
+Выход собственного ассемблера — образ UVM (подшаг 6): адреса записей
+видны значениями ссылок на метки (JMP/CALL на метку за N байтов записи),
+значения констант — аргументами DW/DB; при ошибке образ не выводится —
+только диагностическая строка и код 16.
 
-Паритет (test_parity): ожидания каждой программы строит эталон pass1
-(tools/uasm_assemble.py) — таблица символов в порядке определения
-(словарь Python сохраняет порядок вставки) либо обёрнутая диагностика;
-расхождение — ошибка собственного воплощения. Границы контракта
-инструмента (63 байта имени) сверх эталона — явные ожидания.
+Паритет (TestParity): ожидания каждой программы строит эталон assemble
+(tools/uasm_assemble.py) — расхождение — ошибка собственного воплощения.
+Границы контракта инструмента (63 байта имени) сверх эталона — явные
+ожидания.
 """
 
 import os
@@ -38,12 +39,19 @@ import unittest
 
 from tests import uvm_testkit as tk
 from tools import ubrick_cli
-from tools.uasm_assemble import pass1, split_lines
+from tools.uasm_assemble import assemble
 from tools.uvm_table import TABLE
 
-WORD = 1 << 64
-MNEMONICS = [rec[1] for rec in TABLE]   # 38 мнемоник
-IMMS = {rec[1]: rec[3] for rec in TABLE}   # мнемоника -> imm64
+CODES = {rec[1]: rec[0] for rec in TABLE}   # мнемоника -> код
+
+
+# @method le(v) -> bytes
+# @in    v: int — слово 0..2^64-1
+# @out   raw: bytes — восемь байтов little-endian
+# @does  Кодирует поле imm64 и аргумент DW в ожиданиях тестов (SPEC/
+# @does  L2-UASM.txt, разделы 5-6).
+def le(v):
+    return v.to_bytes(8, "little")
 
 
 # @method repo_root() -> str
@@ -95,32 +103,30 @@ def feed(text):
 # @method symwant(text) -> tuple
 # @in    text: str — текст uAsm (несколько строк)
 # @out   pair: tuple — (код завершения, байты stdout) ожидание
-# @does  Строит ожидание эталоном pass1 (кирпич паритета с
-# @does  tools/uasm_assemble.py, источник истины поведения): таблица
-# @does  символов в порядке определения печатается строками
-# @does  «имя=значение» (значение по модулю 2^64), ошибка — своя
-# @does  диагностическая строка «uAsm: строка N: текст» и код 16.
-# @depends pass1, split_lines, WORD
+# @does  Строит ожидание эталоном assemble (кирпич паритета с
+# @does  tools/uasm_assemble.py, источник истины поведения): успех —
+# @does  образ байт в байт, код 0; ошибка — диагностическая строка
+# @does  «uAsm: строка N: текст» и код 16.
+# @depends assemble
 def symwant(text):
-    _, symbols, error = pass1(split_lines(text))
+    image, error = assemble(text)
     if error is not None:
         return 16, (error + "\n").encode("utf-8")
-    out = "".join("%s=%d\n" % (name, value % WORD)
-                  for name, value in symbols.items())
-    return 0, out.encode("utf-8")
+    return 0, image
 
 
 class TestParity(unittest.TestCase):
-    """Программы целиком — паритет с эталоном pass1 (байт в байт)."""
+    """Программы целиком — паритет с эталоном assemble (байт в байт)."""
 
     # @method test_programs() -> None
     # @in    нет
     # @out   нет
     # @does  Представители программ всех форм: метки и константы,
-    # @does  инструкции и директивы (сдвигают адреса), несколько меток
-    # @does  на одном адресе, ссылки вперёд, метка в конце текста,
-    # @does  ошибки разбора и повторных определений — вывод собственного
-    # @does  воплощения равен эталону pass1 байт в байт.
+    # @does  инструкции и директивы (сдвигают адреса — наблюдаемо
+    # @does  ссылками), несколько меток на одном адресе, ссылки вперёд,
+    # @does  метка в конце текста, ошибки разбора и повторных
+    # @does  определений — вывод собственного воплощения равен эталону
+    # @does  байт в байт.
     # @depends feed, symwant
     def test_programs(self):
         programs = [
@@ -159,95 +165,93 @@ class TestParity(unittest.TestCase):
 
 
 class TestAddresses(unittest.TestCase):
-    """Адреса записей: recsize всех видов и все мнемоники."""
+    """Адреса записей: recsize всех видов наблюдаем ссылками на метки."""
 
     # @method test_sizes() -> None
     # @in    нет
     # @out   нет
-    # @does  Метки между записями всех видов получают верные адреса
-    # @does  (SPEC/L2-UASM.txt, раздел 7): DB 1 2 — 2 байта, DW 3 4 —
-    # @does  16, DS «s» — 1, DZ «z» — 2 (плюс байт 0), NOP — 1,
-    # @does  PUSH 1 — 9; значения — накопление recsize.
+    # @does  Записи всех видов кодируются с верными размерами (SPEC/
+    # @does  L2-UASM.txt, раздел 7): DB 1 2 — 2 байта, DW 3 4 — 16,
+    # @does  DS «s» — 1, DZ «z» — 2 (плюс байт 0), NOP — 1, PUSH 1 — 9;
+    # @does  JMP на метку за всеми записями получает накопленный адрес
+    # @does  40 (9 + 2 + 16 + 1 + 2 + 1 + 9 — проверка recsize всех видов
+    # @does  разом; метка в конце — адрес конца образа).
     # @depends feed
     def test_sizes(self):
-        text = (b"a:\nDB 1 2\nb:\nDW 3 4\nc:\nDS \"s\"\nd:\nDZ \"z\"\n"
-                b"e:\nNOP\nf:\nPUSH 1\ng:\n")
+        text = ("JMP g\nDB 1 2\nDW 3 4\nDS \"s\"\nDZ \"z\"\n"
+                "NOP\nPUSH 1\ng:\n")
         self.assertEqual(
-            feed(text),
-            (0, b"a=0\nb=2\nc=18\nd=19\ne=21\nf=22\ng=31\n"))
-
-    # @method test_all_mnemonics() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Все 38 мнемоник таблицы опкодов разбираются и копят адрес
-    # @does  верно (ожидание — из эталонной таблицы tools/uvm_table,
-    # @does  источник истины кодов и признака imm64): после каждой
-    # @does  инструкции метка с накопленным адресом — 9 байтов у мнемоники
-    # @does  с imm64, 1 без.
-    # @depends feed, MNEMONICS, IMMS
-    def test_all_mnemonics(self):
-        lines = []
-        want = []
-        addr = 0
-        for i, m in enumerate(MNEMONICS):
-            lines.append(m + (" 1" if IMMS[m] else ""))
-            lines.append("l%d:" % i)
-            addr += 9 if IMMS[m] else 1
-            want.append("l%d=%d\n" % (i, addr))
-        code, out = feed(("\n".join(lines) + "\n").encode())
-        self.assertEqual((code, out), (0, "".join(want).encode()))
+            feed(text.encode()),
+            (0, bytes([CODES["JMP"]]) + le(40) + b"\x01\x02"
+             + le(3) + le(4) + b"s" + b"z\x00"
+             + bytes([CODES["NOP"]]) + bytes([CODES["PUSH"]]) + le(1)))
 
     # @method test_label_at_end() -> None
     # @in    нет
     # @out   нет
     # @does  Метка в конце текста получает адрес конца образа (SPEC/
-    # @does  L2-UASM.txt, раздел 3): NOP до метки — адрес 1; метка без
-    # @does  перевода строки в конце входа — тоже разбирается.
+    # @does  L2-UASM.txt, раздел 3), наблюдаемый ссылкой на неё: JMP на
+    # @does  метку после NOP — адрес 10 (9 + 1); JMP на метку сразу за
+    # @does  ним — 9; метка без перевода строки в конце входа тоже
+    # @does  разбирается (JMP после PUSH 1 и HALT 0 — адрес 27).
     # @depends feed
     def test_label_at_end(self):
-        self.assertEqual(feed(b"NOP\nx:"), (0, b"x=1\n"))
-        self.assertEqual(feed(b"x:"), (0, b"x=0\n"))
-        self.assertEqual(feed(b"NOP\nPUSH 1\nHALT 0\nend:"),
-                         (0, b"end=19\n"))
+        self.assertEqual(
+            feed(b"JMP x\nNOP\nx:"),
+            (0, bytes([CODES["JMP"]]) + le(10) + bytes([CODES["NOP"]])))
+        self.assertEqual(feed(b"JMP x\nx:"),
+                         (0, bytes([CODES["JMP"]]) + le(9)))
+        self.assertEqual(
+            feed(b"JMP end\nPUSH 1\nHALT 0\nend:"),
+            (0, bytes([CODES["JMP"]]) + le(27) + bytes([CODES["PUSH"]])
+             + le(1) + bytes([CODES["HALT"]]) + le(0)))
 
     # @method test_forward_reference() -> None
     # @in    нет
     # @out   нет
     # @does  Ссылка вперёд: метка после использования получает адрес,
-    # @does  который подставит проход 2 (SPEC/L2-UASM.txt, раздел 3):
-    # @does  JMP end — 9 байтов, NOP — 1, end = 10.
+    # @does  который подставляет проход 2 (SPEC/L2-UASM.txt, раздел 3):
+    # @does  JMP end — 9 байтов, NOP — 1, end = 10; CALL fwd — 9,
+    # @does  fwd = 9.
     # @depends feed
     def test_forward_reference(self):
-        self.assertEqual(feed(b"JMP end\nNOP\nend:"),
-                         (0, b"end=10\n"))
-        self.assertEqual(feed(b"CALL fwd\nfwd:"), (0, b"fwd=9\n"))
+        self.assertEqual(
+            feed(b"JMP end\nNOP\nend:"),
+            (0, bytes([CODES["JMP"]]) + le(10) + bytes([CODES["NOP"]])))
+        self.assertEqual(
+            feed(b"CALL fwd\nfwd:"),
+            (0, bytes([CODES["CALL"]]) + le(9)))
 
     # @method test_const_no_bytes() -> None
     # @in    нет
     # @out   нет
     # @does  Метки и константы байтов не дают (record_size эталона — 0):
-    # @does  константа между метками не сдвигает адреса; порядок
-    # @does  листинга — порядок определения.
+    # @does  константа между инструкциями не сдвигает адреса — образ
+    # @does  одной инструкции NOP.
     # @depends feed
     def test_const_no_bytes(self):
-        self.assertEqual(feed(b"x = 5\na:\nNOP\nb:"),
-                         (0, b"x=5\na=0\nb=1\n"))
+        self.assertEqual(feed(b"x = 5\nNOP\n"), (0, bytes([CODES["NOP"]])))
 
     # @method test_string_sizes() -> None
     # @in    нет
     # @out   нет
     # @does  Длины литералов DS/DZ — декодированные байты: «a» плюс шесть
     # @does  escape — 7 байтов (escape по байту), многобайтовый UTF-8
-    # @does  дословно («привет» — 12); DZ добавляет байт 0 при
-    # @does  кодировании («мир!» — 7 + 1 = 8 — метка за директивой).
+    # @does  дословно («привет» — 12); DZ добавляет байт 0 («мир!» —
+    # @does  7 + 1 = 8) — JMP на метку за директивой получает адрес
+    # @does  9 + длина (16, 21 и 17).
     # @depends feed
     def test_string_sizes(self):
-        self.assertEqual(feed(b'a:\nDS "a\\n\\r\\t\\\\\\"\\0"\nb:\n'),
-                         (0, b"a=0\nb=7\n"))
-        self.assertEqual(feed('a:\nDS "привет"\nb:\n'.encode("utf-8")),
-                         (0, 'a=0\nb=12\n'.encode("utf-8")))
-        self.assertEqual(feed('a:\nDZ "мир!"\nb:\n'.encode("utf-8")),
-                         (0, 'a=0\nb=8\n'.encode("utf-8")))
+        jump = bytes([CODES["JMP"]])
+        self.assertEqual(
+            feed(b'JMP b\nDS "a\\n\\r\\t\\\\\\"\\0"\nb:\n'),
+            (0, jump + le(16) + b"a\n\r\t\\\"\x00"))
+        self.assertEqual(
+            feed('JMP b\nDS "привет"\nb:\n'.encode("utf-8")),
+            (0, jump + le(21) + "привет".encode("utf-8")))
+        self.assertEqual(
+            feed('JMP b\nDZ "мир!"\nb:\n'.encode("utf-8")),
+            (0, jump + le(17) + "мир!".encode("utf-8") + b"\x00"))
 
 
 class TestDuplicates(unittest.TestCase):
@@ -259,8 +263,8 @@ class TestDuplicates(unittest.TestCase):
     # @does  Повторное определение имени — ошибка с номером строки
     # @does  второго определения (SPEC/L2-UASM.txt, раздел 7): метка
     # @does  после метки, константа после константы, константа после
-    # @does  метки и метка после константы; листинг при ошибке не
-    # @does  печатается — только диагностика, код 16.
+    # @does  метки и метка после константы; образ при ошибке
+    # @does  не выводится — только диагностика, код 16.
     # @depends feed
     def test_duplicates(self):
         cases = [
@@ -276,20 +280,6 @@ class TestDuplicates(unittest.TestCase):
                         "имени %s\n" % (line, name)).encode("utf-8")
                 self.assertEqual(feed(text.encode()), (16, want))
 
-    # @method test_distinct_names() -> None
-    # @in    нет
-    # @out   нет
-    # @does  Разные имена — норма: метки и константы рядом, поиск
-    # @does  различает имена без ложных совпадений (префиксы s0/s1/s10
-    # @does  и метки, одноимённые с мнемониками PUSH и DB, — роль слова
-    # @does  определяет позиция в строке).
-    # @depends feed
-    def test_distinct_names(self):
-        self.assertEqual(feed(b"s0 = 0\ns1 = 1\ns10 = 10\ns100 = 100\n"),
-                         (0, b"s0=0\ns1=1\ns10=10\ns100=100\n"))
-        self.assertEqual(feed(b"PUSH:\nDB:\n"),
-                         (0, b"PUSH=0\nDB=0\n"))
-
 
 class TestNames(unittest.TestCase):
     """Лимит имени 63 байта — контракт инструмента (SPEC, раздел 5А)."""
@@ -297,17 +287,19 @@ class TestNames(unittest.TestCase):
     # @method test_name_limits() -> None
     # @in    нет
     # @out   нет
-    # @does  Имя 63 байта — норма (метка и константа), 64 — «слишком
-    # @does  длинное имя» и код 16 (SPEC/L4-SELFHOST.txt, раздел 5А:
-    # @does  запись «значение 8 LE + имя + 0»; у эталона лимита нет —
-    # @does  ожидания явные, не паритет).
+    # @does  Имя 63 байта — норма (метка и константа наблюдаются
+    # @does  аргументом DW: адрес метки 0 и значение константы 7), 64 —
+    # @does  «слишком длинное имя» и код 16 (SPEC/L4-SELFHOST.txt,
+    # @does  раздел 5А: запись «значение 8 LE + имя + 0»; у эталона
+    # @does  лимита нет — ожидания явные, не паритет).
     # @depends feed
     def test_name_limits(self):
         ok = "a" * 63
-        self.assertEqual(feed((ok + ":\n").encode()),
-                         (0, (ok + "=0\n").encode()))
-        self.assertEqual(feed((ok + " = 7\n").encode()),
-                         (0, (ok + "=7\n").encode()))
+        self.assertEqual(feed((ok + ":\nDW " + ok + "\n").encode()),
+                         (0, le(0)))
+        self.assertEqual(
+            feed((ok + " = 7\nDW " + ok + "\n").encode()),
+            (0, le(7)))
         for line in ("b" * 64 + ":", "b" * 64 + " = 1"):
             with self.subTest(line=line[-2:]):
                 code, out = feed((line + "\n").encode())
@@ -323,31 +315,33 @@ class TestSmoke(unittest.TestCase):
     # @method test_many_consts() -> None
     # @in    нет
     # @out   нет
-    # @does  100 констант подряд: каждая дописывает запись в таблицу,
-    # @does  поиск прохода по всем записям не находит ложных повторов,
-    # @does  листинг — все 100 символов в порядке определения.
-    # @depends feed
+    # @does  100 пар «константа + DW имя»: каждая дописывает запись
+    # @does  в таблицу, поиск различает имена без ложных совпадений
+    # @does  (s0/s1/s10 — префиксы), значения кодируются little-endian;
+    # @does  ожидание строит эталон assemble.
+    # @depends feed, symwant
     def test_many_consts(self):
         count = 100
-        text = "".join("s%d = %d\n" % (i, i) for i in range(count))
-        want = "".join("s%d=%d\n" % (i, i) for i in range(count))
-        code, out = feed(text.encode())
-        self.assertEqual((code, out), (0, want.encode()))
+        text = "".join("s%d = %d\nDW s%d\n" % (i, i, i)
+                       for i in range(count))
+        self.assertEqual(feed(text.encode()), symwant(text))
 
     # @method test_label_chain() -> None
     # @in    нет
     # @out   нет
-    # @does  60 пар «метка + DB 7»: каждая метка — накопленный адрес
-    # @does  (DB — один байт), конечная метка — 60; курсор таблицы
-    # @does  продвигается symnext корректно на каждой записи.
+    # @does  60 пар «DB 7 + метка»: каждая метка — накопленный адрес
+    # @does  (DB — один байт), JMP на конечную метку получает 9 + 60 =
+    # @does  69; курсор таблицы продвигается symnext корректно на каждой
+    # @does  записи.
     # @depends feed
     def test_label_chain(self):
         count = 60
-        text = "".join("l%d:\nDB 7\n" % i for i in range(count)) + "end:\n"
-        want = "".join("l%d=%d\n" % (i, i) for i in range(count))
-        want += "end=%d\n" % count
-        code, out = feed(text.encode())
-        self.assertEqual((code, out), (0, want.encode()))
+        text = "JMP end\n" + "".join("DB 7\nl%d:\n" % i
+                                     for i in range(count)) + "end:\n"
+        self.assertEqual(
+            feed(text.encode()),
+            (0, bytes([CODES["JMP"]]) + le(count + 9)
+             + b"\x07" * count))
 
 
 class TestProcess(unittest.TestCase):
@@ -357,8 +351,9 @@ class TestProcess(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Команды контракта процессами: ubrick_cli compile, затем
-    # @does  uvm_cli с входным файлом; stdout — листинг символов
-    # @does  программы со ссылкой вперёд (end = 10), код 0.
+    # @does  uvm_cli с входным файлом; stdout — образ программы
+    # @does  со ссылкой вперёд (JMP end: опкод 0x40, imm64 10 — адрес
+    # @does  метки за NOP), код 0.
     # @uses   subprocess — запуск инструментов настоящими процессами
     def test_process_run(self):
         import subprocess
@@ -382,7 +377,9 @@ class TestProcess(unittest.TestCase):
                      image],
                     stdin=handle, capture_output=True)
             self.assertEqual(run.returncode, 0)
-            self.assertEqual(run.stdout, b"end=10\n")
+            self.assertEqual(run.stdout,
+                             bytes([CODES["JMP"]]) + le(10)
+                             + bytes([CODES["NOP"]]))
 
 
 if __name__ == "__main__":
