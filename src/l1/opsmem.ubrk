@@ -1,0 +1,57 @@
+; @uadro
+; @file    src/l1/opsmem.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — обработчики группы «память» 0x10-0x13 (SPEC/
+; @desc    L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
+; @desc    подшаг 4 — LOAD8, LOAD64, STORE8, STORE64; кирпичи памяти
+; @desc    гостя — mem.ubrk (gloadbyte, gloadword, gstorebyte,
+; @desc    gstoreword), имена обработчиков — мнемоники строчными.
+
+; @method load8 ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; байт ОЗУ гостя (расширенный нулями) лежит в DS гостя
+; @does  Обработчик LOAD8 0x10 (эффект ( addr -- u8 )): gpop снимает
+; @does  адрес со стека гостя, gloadbyte читает байт ОЗУ гостя
+; @does  (адрес вне ОЗУ — ловушка 7), gpush кладёт результат (как
+; @does  op_load8 эталона, t0.uvm.ops); пустой стек — ловушка 2;
+; @does  кирпич dmem (tab.ubrk).
+; @depends gpop, gloadbyte, gpush
+: load8
+  gpop gloadbyte gpush ;
+
+; @method load64 ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; 64-битное слово ОЗУ гостя лежит в DS гостя
+; @does  Обработчик LOAD64 0x11 (эффект ( addr -- w64 )): gpop снимает
+; @does  адрес, gloadword читает восемь байтов little-endian без
+; @does  требования выравнивания (каждый байт проверен — ловушка 7),
+; @does  gpush кладёт слово (как op_load64 эталона); пустой стек —
+; @does  ловушка 2; кирпич dmem (tab.ubrk).
+; @depends gpop, gloadword, gpush
+: load64
+  gpop gloadword gpush ;
+
+; @method store8 ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; младший байт val записан в ОЗУ гостя по адресу addr
+; @does  Обработчик STORE8 0x12 (эффект ( val addr -- )): gpop снимает
+; @does  со стека гостя addr и val (на стеке узла — addr глубже, val
+; @does  вершина), gstorebyte пишет младший байт val (адрес вне ОЗУ —
+; @does  ловушка 7, как op_store8 и store_byte эталона); меньше двух
+; @does  слов — ловушка 2; кирпич dmem (tab.ubrk).
+; @depends gpop, gstorebyte
+: store8
+  gpop gpop gstorebyte ;
+
+; @method store64 ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; восемь байтов val записаны в ОЗУ гостя little-endian
+; @does  Обработчик STORE64 0x13 (эффект ( val addr -- )): gpop снимает
+; @does  со стека гостя addr и val, gstoreword раскладывает val в восемь
+; @does  байтов LE (каждый байт проверен — ловушка 7, как op_store64
+; @does  и store_word эталона); меньше двух слов — ловушка 2; кирпич
+; @does  dmem (tab.ubrk).
+; @depends gpop, gstoreword
+: store64
+  gpop gpop gstoreword ;
