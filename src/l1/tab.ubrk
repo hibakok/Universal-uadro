@@ -3,16 +3,17 @@
 ; @layer   L1
 ; @branch  l1.uvm.emu
 ; @desc    Эмулятор UVM — дерево диапазонов: таблица обработчиков (SPEC/
-; @desc    L4-SELFHOST.txt, раздел 5Б, подшаги 2-4): dispatch — вложенные IF
+; @desc    L4-SELFHOST.txt, раздел 5Б, подшаги 2-6): dispatch — вложенные IF
 ; @desc    по шести диапазонам SPEC/L0-UVM.txt (раздел 5), внутри — слова
 ; @desc    групп, по коду — CALL обработчика (ops*.ubrk, по файлу на
-; @desc    группу, как t0.uvm.ops): «стек» и «память» — все коды групп;
-; @desc    арифметика, сравнения, переходы (кроме HALT) и SYS — подшаги
-; @desc    5-6, пока ловушка 6.
+; @desc    группу, как t0.uvm.ops): все 38 опкодов v0.1 — «стек»
+; @desc    (opsstack.ubrk), «память» (opsmem.ubrk), «арифметика»
+; @desc    (opsarith.ubrk), «сравнения» (opscmp.ubrk), «переходы»
+; @desc    (opsjump.ubrk), «система» (opssys.ubrk).
 
 ; @method dstack ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
-; @out   нет; CALL обработчика группы «стек» — либо ловушка 6
+; @out   нет; CALL обработчика группы «стек» — либо ловушка 2/3 гостя
 ; @does  Группа «стек» 0x00-0x07 (SPEC/L0-UVM.txt, раздел 5): NOP — nop,
 ; @does  PUSH — push, DROP — drop, DUP — dup, SWAP — swap, OVER — over,
 ; @does  ROT — rot, PICK — pick (все — opsstack.ubrk, подшаги 2-3);
@@ -33,7 +34,7 @@
 
 ; @method dmem ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
-; @out   нет; CALL обработчика группы «память» — либо ловушка 6
+; @out   нет; CALL обработчика группы «память» — либо ловушка 2/7 гостя
 ; @does  Группа «память» 0x10-0x13 (SPEC/L0-UVM.txt, раздел 5): LOAD8 —
 ; @does  load8, LOAD64 — load64, STORE8 — store8, STORE64 — store64
 ; @does  (все — opsmem.ubrk, подшаг 4); последний код достаётся без
@@ -50,45 +51,80 @@
 
 ; @method darith ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
-; @out   нет; не возвращается: ловушка 6 (пока нет обработчиков)
-; @does  Группа «арифметика» 0x20-0x2C (ADD .. INV) — подшаг 5:
-; @does  обработчиков ещё нет, любой код группы — ловушка 6 (заготовка
-; @does  дерева); кирпич dispatch.
-; @depends STOP
+; @out   нет; CALL обработчика группы «арифметика» — либо ловушка 1/2
+; @does  Группа «арифметика» 0x20-0x2C (SPEC/L0-UVM.txt, раздел 5):
+; @does  ADD — add, SUB — sub, MUL — mul, UDIV — udiv, UMOD — umod,
+; @does  NEG — neg, SHL — shl, SHR — shr, SAR — sar, AND — and, OR —
+; @does  or, XOR — xor, INV — inv (все — opsarith.ubrk, подшаг 5;
+; @does  UDIV/UMOD при делителе 0 — ловушка 1); последний код достаётся
+; @does  без сравнения — принадлежность диапазону уже проверил decode;
+; @does  кирпич dispatch.
+; @depends gc, EQ, DUP, DROP, IF, EXIT, THEN, add, sub, mul, udiv, umod,
+; @depends neg, shl, shr, sar, and, or, xor, inv, STOP
 : darith
-  6 STOP ;
+  gc LOAD64
+  DUP 0x20 EQ IF DROP add EXIT THEN
+  DUP 0x21 EQ IF DROP sub EXIT THEN
+  DUP 0x22 EQ IF DROP mul EXIT THEN
+  DUP 0x23 EQ IF DROP udiv EXIT THEN
+  DUP 0x24 EQ IF DROP umod EXIT THEN
+  DUP 0x25 EQ IF DROP neg EXIT THEN
+  DUP 0x26 EQ IF DROP shl EXIT THEN
+  DUP 0x27 EQ IF DROP shr EXIT THEN
+  DUP 0x28 EQ IF DROP sar EXIT THEN
+  DUP 0x29 EQ IF DROP and EXIT THEN
+  DUP 0x2A EQ IF DROP or EXIT THEN
+  DUP 0x2B EQ IF DROP xor EXIT THEN
+  DROP inv ;
 
 ; @method dcmp ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
-; @out   нет; не возвращается: ловушка 6 (пока нет обработчиков)
-; @does  Группа «сравнения» 0x30-0x35 (EQ .. GEU) — подшаг 5:
-; @does  обработчиков ещё нет, любой код группы — ловушка 6 (заготовка
-; @does  дерева); кирпич dispatch.
-; @depends STOP
+; @out   нет; CALL обработчика группы «сравнения» — либо ловушка 2 гостя
+; @does  Группа «сравнения» 0x30-0x35 (SPEC/L0-UVM.txt, раздел 5):
+; @does  EQ — eq, NEQ — neq, LTU — ltu, GTU — gtu, LEU — leu, GEU —
+; @does  geu (все — opscmp.ubrk, подшаг 5); последний код достаётся
+; @does  без сравнения — принадлежность диапазону уже проверил decode;
+; @does  кирпич dispatch.
+; @depends gc, EQ, DUP, DROP, IF, EXIT, THEN, eq, neq, ltu, gtu, leu,
+; @depends geu, STOP
 : dcmp
-  6 STOP ;
+  gc LOAD64
+  DUP 0x30 EQ IF DROP eq EXIT THEN
+  DUP 0x31 EQ IF DROP neq EXIT THEN
+  DUP 0x32 EQ IF DROP ltu EXIT THEN
+  DUP 0x33 EQ IF DROP gtu EXIT THEN
+  DUP 0x34 EQ IF DROP leu EXIT THEN
+  DROP geu ;
 
 ; @method djump ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
-; @out   нет; CALL обработчика группы «переходы» — либо ловушка 6
-; @does  Группа «переходы» 0x40-0x45 (SPEC/L0-UVM.txt, раздел 5): HALT
-; @does  (0x45) — обработчик halt (opsjump.ubrk); JMP, JZ, JNZ, CALL,
-; @does  RET — подшаг 6 (пока ловушка 6); кирпич dispatch.
-; @depends gc, EQ, DUP, DROP, IF, EXIT, THEN, halt, STOP
+; @out   нет; CALL обработчика группы «переходы» — либо ловушка 4/5/7
+; @does  Группа «переходы» 0x40-0x45 (SPEC/L0-UVM.txt, раздел 5): JMP —
+; @does  jmp, JZ — jz, JNZ — jnz, CALL — call, RET — ret, HALT — halt
+; @does  (все — opsjump.ubrk, подшаги 2 и 6); последний код достаётся
+; @does  без сравнения — принадлежность диапазону уже проверил decode;
+; @does  кирпич dispatch.
+; @depends gc, EQ, DUP, DROP, IF, EXIT, THEN, jmp, jz, jnz, call, ret,
+; @depends halt, STOP
 : djump
   gc LOAD64
-  DUP 0x45 EQ IF DROP halt EXIT THEN
-  DROP 6 STOP ;
+  DUP 0x40 EQ IF DROP jmp EXIT THEN
+  DUP 0x41 EQ IF DROP jz EXIT THEN
+  DUP 0x42 EQ IF DROP jnz EXIT THEN
+  DUP 0x43 EQ IF DROP call EXIT THEN
+  DUP 0x44 EQ IF DROP ret EXIT THEN
+  DROP halt ;
 
 ; @method dsys ( -- )
 ; @in    нет (клетка gc — код; gpc уже переведён декодером за инструкцию)
-; @out   нет; не возвращается: ловушка 6 (пока нет обработчика)
-; @does  Группа «система» 0x50 (SYS) — подшаг 6 (SYS-мост 0/1/2):
-; @does  обработчика ещё нет, код — ловушка 6 (заготовка дерева);
-; @does  кирпич dispatch.
-; @depends STOP
+; @out   нет; CALL обработчика SYS-моста — либо ловушка 8 гостя
+; @does  Группа «система» 0x50 (SPEC/L0-UVM.txt, раздел 6): SYS — sys
+; @does  (opssys.ubrk, подшаг 6: SYS 0/1/2, прочий номер — ловушка 8);
+; @does  в группе один код — сравнения нет, принадлежность диапазону
+; @does  уже проверил decode; кирпич dispatch.
+; @depends sys
 : dsys
-  6 STOP ;
+  sys ;
 
 ; @method dispatch ( -- )
 ; @in    нет (клетка gc — код инструкции; decode уже перевёл gpc)
