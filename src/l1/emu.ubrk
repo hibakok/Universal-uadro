@@ -1,0 +1,67 @@
+; @uadro
+; @file    src/l1/emu.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — собственное воплощение Этапа 4: вход — образ
+; @desc    гостя в stdin (KEY), выход — вывод программы гостя (EMIT),
+; @desc    код завершения — код гостя: imm HALT по модулю 256 либо код
+; @desc    ловушки 1-8 (SPEC/L4-SELFHOST.txt, разделы 4 и 5Б). Подшаги
+; @desc    1-2: раскладка и чтение образа гостя (mem.ubrk: ловушка 7 при
+; @desc    входе длиннее 512 КиБ — код 7, вывод пуст), клетки машины
+; @desc    гостя (greset), декодер (dec.ubrk: шесть диапазонов, поле
+; @desc    imm64, ловушки 6/7), дерево диапазонов (tab.ubrk) и цикл
+; @desc    «decode dispatch»:
+; @desc    обработчики NOP (opsstack.ubrk) и HALT (opsjump.ubrk) —
+; @desc    несколько NOP и HALT imm дают код imm; остальные группы
+; @desc    опкодов — ловушка 6 (заготовка подшагов 3-6: стеки, память,
+; @desc    арифметика и сравнения, переходы и SYS-мост); use-включения —
+; @desc    SPEC/L3-UBRICK.txt, раздел 3.
+use mem.ubrk
+use dec.ubrk
+use tab.ubrk
+use opsstack.ubrk
+use opsjump.ubrk
+
+; @method imgstep ( cur -- cur' done )
+; @in    cur: слово — адрес узла следующего байта образа гостя
+; @out   cur': слово — адрес узла следующего байта после шага
+; @out   done: слово — 0: байт прочитан и записан; 1: EOF
+; @does  Один шаг чтения образа гостя из stdin (SPEC/L4-SELFHOST.txt,
+; @does  раздел 5Б): keyok читает байт; байт при наличии места (imgroom)
+; @does  — imgput пишет его в ОЗУ гостя, шаг возвращает 0; вход длиннее
+; @does  512 КиБ — ловушка 7 гостя до начала исполнения: STOP с кодом 7
+; @does  и пустым выводом, шаг не возвращается; EOF — 1, курсор не
+; @does  меняется; как readstep ассемблера (раздел 5А).
+; @depends keyok, imgroom, imgput, STOP
+: imgstep
+  keyok
+  IF
+    OVER imgroom
+    IF imgput 0 ELSE DROP DROP 7 STOP THEN
+  ELSE
+    1
+  THEN ;
+
+; @method main ( -- )
+; @in    нет (вход инструмента — байты stdin, KEY: образ гостя)
+; @out   нет (выход — байты SYS 1 гостя, EMIT; код завершения — код
+; @out   гостя: imm HALT по модулю 256 либо код ловушки 1-8)
+; @does  Эмулятор UVM (SPEC/L4-SELFHOST.txt, раздел 5Б): читает образ
+; @does  гостя целиком в его ОЗУ (imgstep с адреса grambase до EOF;
+; @does  вход длиннее 512 КиБ — ловушка 7, код 7, вывод пуст), снимает
+; @does  курсор чтения со стека, greset ставит PC = 0 и пустые стеки
+; @does  (SPEC/L0-UVM.txt, раздел 2), затем цикл инструкций — шаг decode
+; @does  (dec.ubrk: код, поле imm64, gpc — за инструкцией) + dispatch
+; @does  (tab.ubrk: дерево диапазонов, CALL обработчика) до STOP
+; @does  обработчика — HALT imm либо ловушка гостя; подшаги 3-6 добавят
+; @does  остальные группы опкодов (пока ловушка 6) и SYS-мост (SYS 1
+; @does  гостя — EMIT, SYS 0 — всегда EOF: stdin инструмента израсходован
+; @does  образом); цикл не завершается сам — только STOP (BEGIN AGAIN).
+; @depends grambase, imgstep, DROP, greset, decode, dispatch, BEGIN,
+; @depends UNTIL, AGAIN
+: main
+  grambase
+  BEGIN imgstep UNTIL
+  DROP
+  greset
+  BEGIN decode dispatch AGAIN ;
