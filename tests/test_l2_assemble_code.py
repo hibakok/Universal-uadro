@@ -40,11 +40,14 @@ import unittest
 from tests import uvm_testkit as tk
 from tools import ubrick_cli
 from tools.uasm_assemble import assemble
-from tools.uvm_table import TABLE
-
+# Собственный ассемблер пишется под ISA v0.2 (SPEC/L4-SELFHOST.txt,
+# раздел 2): мнемоники — из кирпича isa_v02_table, а не из полной
+# таблицы эталона (уже с DEVRD/DEVWR v0.3); собственному ассемблеру
+# они приходят подшагом 5.4 (ROADMAP.txt, Этап 5).
+V02 = tk.isa_v02_table()                  # ISA v0.2 — 38 опкодов
 IMG_TEXT = "образ слишком большой"      # ошибка ёмкости буфера образа
-MNEMONICS = [rec[1] for rec in TABLE]   # 38 мнемоник
-IMMS = {rec[1]: rec[3] for rec in TABLE}   # мнемоника -> imm64
+MNEMONICS = [rec[1] for rec in V02]     # 38 мнемоник
+IMMS = {rec[1]: rec[3] for rec in V02}   # мнемоника -> imm64
 
 
 # @method repo_root() -> str
@@ -196,13 +199,14 @@ class TestMnemonics(unittest.TestCase):
     # @method test_all_mnemonics() -> None
     # @in    нет
     # @out   нет
-    # @does  Все 38 мнемоник таблицы опкодов кодируются верно (ожидание —
-    # @does  из tools/uvm_table, источник истины кодов и признака imm64):
+    # @does  Все 38 мнемоник ISA v0.2 кодируются верно (ожидание —
+    # @does  из кирпича isa_v02_table, источник истины кодов и признака
+    # @does  imm64 — таблица эталона до границы v0.2):
     # @does  байт опкода, у мнемоники с imm64 — ещё восемь байтов
     # @does  little-endian значения операнда (7), без imm64 — один байт.
-    # @depends feed, MNEMONICS, IMMS
+    # @depends feed, MNEMONICS, IMMS, V02
     def test_all_mnemonics(self):
-        codes = {rec[1]: rec[0] for rec in TABLE}
+        codes = {rec[1]: rec[0] for rec in V02}
         lines = []
         image = bytearray()
         for name in MNEMONICS:
