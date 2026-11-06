@@ -5,9 +5,10 @@
 # @desc    Общий тест-набор UVM: компактные машины, снимки стека, сборка
 # @desc    образов программ (в машину и байтами в файл), чтение кодов
 # @desc    ловушек и остановки, заглушки потоков хоста, прогон образов
-# @desc    через cli и прогон без процесса с подменёнными stdin/stdout
-# @desc    (run_with_io) — для тестов ветвей t0.uvm.* и собственных
-# @desc    инструментов Этапа 4 (SPEC/L4-SELFHOST.txt).
+# @desc    через cli, прогон без процесса с подменёнными stdin/stdout
+# @desc    (run_with_io) и прогон с сохранением машины (run_saved) — для
+# @desc    тестов ветвей t0.uvm.* и собственных инструментов Этапа 4
+# @desc    (SPEC/L4-SELFHOST.txt).
 
 """Тест-набор UVM (ветвь t0.infra.tests).
 
@@ -16,9 +17,11 @@
 образов (load_prog — сразу в машину, image_of/image_file — байтами,
 в том числе в файл для ветви t0.uvm.cli), заглушки stdin/stdout
 с полем buffer — как у реальных потоков Python, run_via_cli —
-полный прогон образа через командный запуск и run_with_io — прогон
+полный прогон образа через командный запуск, run_with_io — прогон
 без процесса с подменёнными stdin/stdout для собственных инструментов
-Этапа 4 (SPEC/L4-SELFHOST.txt, раздел 6).
+Этапа 4 (SPEC/L4-SELFHOST.txt, раздел 6) и run_saved — тот же прогон
+с сохранением машины узла для чтения снимков по раскладке инструмента
+(SPEC/L4-SELFHOST.txt, раздел 5Б — эмулятор l1.uvm.*).
 """
 
 import contextlib
@@ -200,3 +203,27 @@ def run_with_io(image, feed=b""):
         _, code = patched_stdin(src,
                                 lambda: uvm_run.run_image(image))
     return code, out.buffer.getvalue()
+
+
+# @method run_saved(image, feed) -> tuple
+# @in    image: bytes — образ программы (инструмента)
+# @in    feed: bytes — байты стандартного ввода (по умолчанию пусто)
+# @out   code: int — код завершения: imm HALT или код ловушки
+# @out   out: bytes — байты, выведенные программой в stdout
+# @out   m: Machine — остановленная машина узла (ОЗУ, PC, стеки):
+# @out   снимки читаются после прогона по раскладке инструмента
+# @does  Прогон образа без процесса с сохранением машины (SPEC/
+# @does  L4-SELFHOST.txt, раздел 5Б, подшаг 1): как run_with_io, но
+# @does  машина не отбрасывается — эмулятор l1.uvm.* хранит состояние
+# @does  гостя в фиксированных адресах своей ОЗУ, тесты читают их из
+# @does  снимка; машина узла — по умолчанию 1 МиБ (инструменту нужно
+# @does  не менее 0x90A80).
+# @depends FakeStream, patched_stdin, uvm_run.run_image
+# @uses   sys.stdin, sys.stdout — потоки хоста (подмена на время прогона)
+def run_saved(image, feed=b""):
+    src = FakeStream(feed)
+    out = FakeStream()
+    with contextlib.redirect_stdout(out):
+        m, code = patched_stdin(src,
+                                lambda: uvm_run.run_image(image))
+    return code, out.buffer.getvalue(), m
