@@ -2,8 +2,8 @@
 # @file    tests/test_uvm_core.py
 # @layer   T0
 # @branch  t0.uvm.core
-# @desc    Тесты ядра UVM: слова, ловушки, остановка, ОЗУ, стеки DS/RS
-# @desc    и загрузка образа.
+# @desc    Тесты ядра UVM: слова, ловушки, остановка, ОЗУ, стеки DS/RS,
+# @desc    загрузка образа и счётчик шагов CYC.
 
 """Тесты ветви t0.uvm.core (tools/uvm_core.py) по SPEC/L0-UVM.txt.
 
@@ -15,6 +15,7 @@ import unittest
 
 from tests import uvm_testkit as tk
 from tools import uvm_core as uc
+from tools import uvm_exec as ex
 
 
 class TestWordBricks(unittest.TestCase):
@@ -73,14 +74,15 @@ class TestTraps(unittest.TestCase):
     # @method test_trap_codes_match_spec() -> None
     # @in    нет
     # @out   нет
-    # @does  Коды ловушек 1..8 соответствуют таблице раздела 3 SPEC.
+    # @does  Коды ловушек 1..9 соответствуют таблице раздела 3 SPEC
+    # @does  (9 — отказ устройства, v0.3).
     def test_trap_codes_match_spec(self):
         codes = [
             uc.TRAP_DIV0, uc.TRAP_DS_EMPTY, uc.TRAP_DS_FULL,
             uc.TRAP_RS_EMPTY, uc.TRAP_RS_FULL, uc.TRAP_BAD_OPCODE,
-            uc.TRAP_OOB, uc.TRAP_BAD_SYS,
+            uc.TRAP_OOB, uc.TRAP_BAD_SYS, uc.TRAP_BAD_PORT,
         ]
-        self.assertEqual(codes, list(range(1, 9)))
+        self.assertEqual(codes, list(range(1, 10)))
 
 
 class TestHalt(unittest.TestCase):
@@ -119,12 +121,15 @@ class TestMachineState(unittest.TestCase):
     # @method test_fresh_state() -> None
     # @in    нет
     # @out   нет
-    # @does  Свежая машина: PC = 0, стеки пусты, ОЗУ из нулей.
+    # @does  Свежая машина: PC = 0, CYC = 0, стеки пусты, ОЗУ из нулей,
+    # @does  шина не привязана (SPEC, разделы 1-2; CYC и шина — v0.3).
     def test_fresh_state(self):
         m = uc.Machine(ram_size=10)
         self.assertEqual(m.pc, 0)
+        self.assertEqual(m.cyc, 0)
         self.assertEqual(m.ds, [])
         self.assertEqual(m.rs, [])
+        self.assertIsNone(m.bus)
         self.assertEqual(bytes(m.ram), bytes(10))
 
 
@@ -213,15 +218,18 @@ class TestImage(unittest.TestCase):
     # @method test_load_image_copies_and_resets() -> None
     # @in    нет
     # @out   нет
-    # @does  Образ копируется с адреса 0; PC = 0; DS и RS пусты.
+    # @does  Образ копируется с адреса 0; PC = 0; CYC = 0; DS и RS
+    # @does  пусты (SPEC, раздел 2).
     def test_load_image_copies_and_resets(self):
         m = tk.small(16)
         m.pc = 9
+        m.cyc = 7
         m.ds.append(1)
         m.rs.append(2)
         uc.load_image(m, b"\x01\x02\xff")
         self.assertEqual(bytes(m.ram[0:3]), b"\x01\x02\xff")
         self.assertEqual(m.pc, 0)
+        self.assertEqual(m.cyc, 0)
         self.assertEqual(m.ds, [])
         self.assertEqual(m.rs, [])
 
@@ -366,6 +374,25 @@ class TestReturnStack(unittest.TestCase):
         uc.rs_push(m, 2)
         self.assertEqual(tk.trap_code(lambda: uc.rs_push(m, 3)),
                          uc.TRAP_RS_FULL)
+
+
+class TestCycleCounter(unittest.TestCase):
+    """Счётчик шагов CYC (SPEC, раздел 1; v0.3)."""
+
+    # @method test_cyc_wraps_mod_word() -> None
+    # @in    нет
+    # @out   нет
+    # @does  CYC переносится по модулю 2^64: шаг HALT с переносом из
+    # @does  WORD_MASK обрывается до нуля (эталон хранит слово);
+    # @does  остановка HALT ловится — проверяется только счётчик.
+    # @depends step
+    def test_cyc_wraps_mod_word(self):
+        m = uc.Machine(ram_size=10)
+        m.cyc = uc.WORD_MASK
+        uc.store_byte(m, 0, 0x45)  # HALT imm — один шаг
+        uc.store_word(m, 1, 0)
+        self.assertEqual(tk.halt_code(lambda: ex.step(m)), 0)
+        self.assertEqual(m.cyc, 0)
 
 
 if __name__ == "__main__":
