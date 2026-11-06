@@ -15,16 +15,21 @@ UvmTrap; обе ловит цикл запуска — ветвь t0.uvm.run, с
 Этапа 1.
 """
 
-from tools.uvm_decode import decode
+from tools.uvm_decode import decode_at
 
 
 # @method step(m) -> None
 # @in    m: Machine — состояние машины; PC указывает на байт опкода
 # @out   нет
-# @does  Исполняет одну инструкцию: decode(m) даёт обработчик и значение
-# @does  imm, обработчик выполняет эффект инструкции (SPEC, раздел 5);
-# @does  UvmHalt и UvmTrap проходят наверх к циклу запуска t0.uvm.run.
-# @depends decode
+# @does  Исполняет одну инструкцию: decode_at читает инструкцию по PC,
+# @does  PC переводится за неё целиком, обработчик из записи таблицы
+# @does  выполняет эффект инструкции (SPEC, раздел 5); UvmHalt и UvmTrap
+# @does  проходят наверх к циклу запуска t0.uvm.run. Горячий кирпич
+# @does  интерпретатора: двухстрочное тело decode встроено в step —
+# @does  на одну функцию меньше на каждую инструкцию; decode остаётся
+# @does  публичным кирпичом (тесты t0.uvm.decode, будущий отладчик).
+# @depends decode_at
 def step(m):
-    handler, imm = decode(m)
-    handler(m, imm)
+    entry, imm, next_addr = decode_at(m, m.pc)
+    m.pc = next_addr
+    entry[2](m, imm)
