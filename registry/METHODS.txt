@@ -67,10 +67,13 @@
 ВЕТВЬ t0.ubrick.source [слой T0] — файлов: 2, методов: 38
   индекс: registry/t0.ubrick.source/INDEX.txt
 
+ВЕТВЬ t0.uvm.bus [слой T0] — файлов: 4, методов: 42
+  индекс: registry/t0.uvm.bus/INDEX.txt
+
 ВЕТВЬ t0.uvm.cli [слой T0] — файлов: 2, методов: 28
   индекс: registry/t0.uvm.cli/INDEX.txt
 
-ВЕТВЬ t0.uvm.core [слой T0] — файлов: 2, методов: 49
+ВЕТВЬ t0.uvm.core [слой T0] — файлов: 2, методов: 50
   индекс: registry/t0.uvm.core/INDEX.txt
 
 ВЕТВЬ t0.uvm.decode [слой T0] — файлов: 2, методов: 13
@@ -91,5 +94,5 @@
 ВЕТВЬ t0.uvm.table [слой T0] — файлов: 2, методов: 16
   индекс: registry/t0.uvm.table/INDEX.txt
 
-ВСЕГО ВЕТВЕЙ: 29
-ВСЕГО МЕТОДОВ: 1375
+ВСЕГО ВЕТВЕЙ: 30
+ВСЕГО МЕТОДОВ: 1418
