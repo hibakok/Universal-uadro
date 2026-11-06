@@ -3,10 +3,75 @@
 ; @layer   L1
 ; @branch  l1.uvm.emu
 ; @desc    Эмулятор UVM — обработчики группы «переходы» 0x40-0x45 (SPEC/
-; @desc    L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
-; @desc    подшаг 2 — HALT; JMP, JZ, JNZ, CALL, RET — подшаг 6
-; @desc    (переходы переписывают gpc сами, CALL кладёт адрес возврата
-; @desc    на RS гостя — gpc после decode).
+; @desc    L0-UVM.txt, разделы 4-5; SPEC/L4-SELFHOST.txt, раздел 5Б):
+; @desc    подшаги 2 и 6 — JMP, JZ, JNZ, CALL, RET, HALT. Переходы
+; @desc    переписывают gpc сами (декодер уже перевёл его за инструкцию
+; @desc    целиком — контракт обработчиков, как t0.uvm.exec), CALL кладёт
+; @desc    адрес возврата на RS гостя (rpush — ловушка 5) прежде
+; @desc    перехода, RET снимает его (rpop — ловушка 4); адрес перехода
+; @desc    за пределы ОЗУ гостя ловит следующий decode — gloadbyte по gpc
+; @desc    вне ОЗУ, ловушка 7 (как выборка эталона).
+
+; @method jmp ( -- )
+; @in    нет (клетка gv — абсолютный адрес перехода; gpc уже переведён
+; @in    декодером за инструкцию)
+; @out   нет; gpc = адрес перехода
+; @does  Обработчик JMP addr 0x40 (SPEC/L0-UVM.txt, раздел 5: PC = addr,
+; @does  адрес абсолютный): gv переписывает gpc (как op_jmp эталона,
+; @does  t0.uvm.ops); адрес за ОЗУ гостя ловит следующий decode —
+; @does  ловушка 7; кирпич djump (tab.ubrk).
+; @depends gv, gpcaddr, LOAD64, STORE64
+: jmp
+  gv LOAD64 gpcaddr STORE64 ;
+
+; @method jz ( -- )
+; @in    нет (клетка gv — адрес перехода; gpc уже переведён декодером)
+; @out   нет; при нулевом условии gpc = адрес перехода
+; @does  Обработчик JZ addr 0x41 (эффект ( c -- )): gpop снимает
+; @does  условие со стека гостя (пустой — ловушка 2), not даёт флаг
+; @does  «c = 0» (словарь uBrick: 0 EQ), IF выполняет переход — gv
+; @does  в gpc (как op_jz эталона); условие снимается в любом случае;
+; @does  кирпич djump (tab.ubrk).
+; @depends gpop, not, IF, THEN, gv, gpcaddr, LOAD64, STORE64
+: jz
+  gpop not
+  IF gv LOAD64 gpcaddr STORE64 THEN ;
+
+; @method jnz ( -- )
+; @in    нет (клетка gv — адрес перехода; gpc уже переведён декодером)
+; @out   нет; при ненулевом условии gpc = адрес перехода
+; @does  Обработчик JNZ addr 0x42 (эффект ( c -- )): gpop снимает
+; @does  условие (пустой стек — ловушка 2), IF выполняет переход при
+; @does  c не 0 — gv в gpc (как op_jnz эталона); условие снимается
+; @does  в любом случае; кирпич djump (tab.ubrk).
+; @depends gpop, IF, THEN, gv, gpcaddr, LOAD64, STORE64
+: jnz
+  gpop
+  IF gv LOAD64 gpcaddr STORE64 THEN ;
+
+; @method call ( -- )
+; @in    нет (клетка gv — адрес перехода; gpc уже переведён декодером
+; @in    за инструкцию целиком)
+; @out   нет; адрес возврата на RS гостя, gpc = адрес перехода
+; @does  Обработчик CALL addr 0x43 (SPEC/L0-UVM.txt, раздел 4): rpush
+; @does  кладёт адрес возврата — gpc после decode, байт за полем imm64
+; @does  (переполнение RS — ловушка 5 прежде перехода, как rs_push
+; @does  эталона в op_call), затем gv переписывает gpc; кирпич djump
+; @does  (tab.ubrk).
+; @depends gpcaddr, LOAD64, rpush, gv, STORE64
+: call
+  gpcaddr LOAD64 rpush
+  gv LOAD64 gpcaddr STORE64 ;
+
+; @method ret ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; gpc = адрес возврата, снятый с RS гостя
+; @does  Обработчик RET 0x44: rpop снимает адрес возврата (пустой RS —
+; @does  ловушка 4, как rs_pop эталона в op_ret) и переписывает gpc;
+; @does  кирпич djump (tab.ubrk).
+; @depends rpop, gpcaddr, STORE64
+: ret
+  rpop gpcaddr STORE64 ;
 
 ; @method halt ( -- )
 ; @in    нет (клетка gv — imm инструкции; gpc уже переведён декодером)
