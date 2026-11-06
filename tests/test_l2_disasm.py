@@ -43,10 +43,12 @@ import unittest
 from tests import uvm_testkit as tk
 from tools import ubrick_cli
 from tools.uasm_disasm import disasm as ref_disasm
-from tools.uvm_table import TABLE
-
-NOIMM = [rec for rec in TABLE if not rec[3]]   # опкоды без поля imm64
-IMM = [rec for rec in TABLE if rec[3]]         # опкоды с полем imm64
+# Собственный дизассемблер пишется под ISA v0.2 (SPEC/L4-SELFHOST.txt,
+# раздел 2): опкоды — из кирпича isa_v02_table, а не из полной таблицы
+# эталона; DEVRD/DEVWR приходят ему подшагом 5.4 (ROADMAP.txt, Этап 5).
+V02 = tk.isa_v02_table()                      # ISA v0.2 — 38 опкодов
+NOIMM = [rec for rec in V02 if not rec[3]]   # опкоды без поля imm64
+IMM = [rec for rec in V02 if rec[3]]         # опкоды с полем imm64
 HOLES = (0x08, 0x0F, 0x14, 0x1F, 0x2D, 0x2F,   # дыры между диапазонами
          0x36, 0x3F, 0x46, 0x4F, 0x51, 0xFF)   # и за таблицей
 VALUES = (0, 1, 12345, 2 ** 64 - 1)            # золотые значения imm64
