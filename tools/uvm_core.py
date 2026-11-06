@@ -2,14 +2,17 @@
 # @file    tools/uvm_core.py
 # @layer   T0
 # @branch  t0.uvm.core
-# @desc    Ядро UVM: состояние машины, ловушки, ОЗУ и стеки DS/RS (SPEC/L0-UVM.txt, Этап 1).
+# @desc    Ядро UVM: состояние машины, ловушки, ОЗУ, стеки DS/RS, счётчик
+# @desc    шагов CYC и поле шины устройств (SPEC/L0-UVM.txt, раздел 1;
+# @desc    CYC и шина — черновик v0.3, Этап 5).
 
-"""Ядро виртуальной машины UVM v0.1 (ветвь t0.uvm.core).
+"""Ядро виртуальной машины UVM (ветвь t0.uvm.core).
 
 Здесь живут только кирпичи состояния по SPEC/L0-UVM.txt: слова, ловушки,
-ОЗУ, стеки DS/RS и загрузка образа. Исполнение инструкций — следующие
-ветви Этапа 1: t0.uvm.ops, t0.uvm.table, t0.uvm.decode, t0.uvm.exec,
-t0.uvm.run, t0.uvm.cli.
+ОЗУ, стеки DS/RS, счётчик шагов CYC, поле шины устройств и загрузка
+образа. Исполнение инструкций — следующие ветви: t0.uvm.ops,
+t0.uvm.table, t0.uvm.decode, t0.uvm.exec, t0.uvm.run, t0.uvm.cli;
+механика шины — ветвь t0.uvm.bus (tools/uvm_bus.py).
 """
 
 RAM_SIZE_DEFAULT = 1048576  # 1 МиБ ОЗУ (SPEC, раздел 1)
@@ -27,6 +30,8 @@ TRAP_RS_FULL = 5     # переполнение стека возвратов
 TRAP_BAD_OPCODE = 6  # неизвестный опкод
 TRAP_OOB = 7         # обращение вне ОЗУ
 TRAP_BAD_SYS = 8     # неизвестный номер SYS
+TRAP_BAD_PORT = 9    # отказ устройства: без шины, порт не привязан
+                     # или операция запрещена (v0.3, SPEC, 6А.1)
 
 
 # @method to_word(x) -> int
@@ -100,23 +105,29 @@ class UvmHalt(Exception):
 # @in    ds_size: int — ёмкость стека данных в словах (по умолчанию 1024)
 # @in    rs_size: int — ёмкость стека возвратов в словах (по умолчанию 256)
 # @out   m: Machine — состояние UVM
-# @does  Свежее состояние: ОЗУ из нулей, PC = 0, стеки DS и RS пусты
-# @does  (SPEC, разделы 1-2).
+# @does  Свежее состояние: ОЗУ из нулей, PC = 0, CYC = 0, стеки DS и RS
+# @does  пусты, шина не привязана (SPEC, разделы 1-2; CYC и шина —
+# @does  v0.3: bus = None, пока раннер не привязал устройства).
 class Machine:
-    """Состояние UVM: ОЗУ, PC, стеки DS и RS с их ёмкостями.
+    """Состояние UVM: ОЗУ, PC, CYC, стеки DS и RS, шина устройств.
 
     ОЗУ — байтовый массив; стеки — отдельные списки слов, не отображённые
     в ОЗУ (SPEC, раздел 1). Ёмкости хранятся в ds_size и rs_size.
+    CYC — счётчик шагов, слово по модулю 2^64 (v0.3). Шина bus — таблица
+    «порт -> устройство» (None до привязки раннером); её механика —
+    ветвь t0.uvm.bus, ядро только хранит поле.
     """
 
     def __init__(self, ram_size=RAM_SIZE_DEFAULT, ds_size=DS_SIZE_DEFAULT,
                  rs_size=RS_SIZE_DEFAULT):
         self.ram = bytearray(ram_size)
         self.pc = 0
+        self.cyc = 0
         self.ds = []
         self.ds_size = ds_size
         self.rs = []
         self.rs_size = rs_size
+        self.bus = None
 
 
 # @method in_ram(m, addr) -> bool
@@ -202,14 +213,16 @@ def store_word(m, addr, val):
 # @in    image: bytes — образ программы
 # @out   нет
 # @does  Копирует образ в ОЗУ с адреса 0 и сбрасывает состояние запуска:
-# @does  PC = 0, DS и RS пусты (SPEC, раздел 2); образ больше ОЗУ —
-# @does  ловушка 7.
+# @does  PC = 0, CYC = 0, DS и RS пусты (SPEC, раздел 2); образ больше
+# @does  ОЗУ — ловушка 7. Шина не трогается: привязка устройств —
+# @does  дело раннера, а не загрузки (v0.3, раздел 2, п. 3).
 # @depends trap
 def load_image(m, image):
     if len(image) > len(m.ram):
         trap(TRAP_OOB)
     m.ram[0:len(image)] = image
     m.pc = 0
+    m.cyc = 0
     m.ds.clear()
     m.rs.clear()
 
