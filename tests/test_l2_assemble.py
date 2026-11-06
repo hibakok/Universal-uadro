@@ -5,15 +5,17 @@
 # @desc    Тесты подшагов 1-2 ветви l2.uasm.assemble: каркас, память
 # @desc    и строки со словами (src/l2/assemble.ubrk + use-включения
 # @desc    asmmem.ubrk, asmwords.ubrk, asmmnem.ubrk, asmlex.ubrk,
-# @desc    asmline.ubrk, asmsym.ubrk): сборка compile, пустой вход и пустые
-# @desc    строки молчат, чистка строки (концевые CR, комментарий «;» вне
-# @desc    кавычек, крайние пробелы и табуляции), нумерация строк,
-# @desc    буфер аргументов (256 пар DB/DW — норма, 257 — ошибка 16),
-# @desc    границы лимита 512 КиБ, сквозной прогон процессами; выход
-# @desc    подшага 5 — листинг символов «имя=значение» (метка наблюдаема
-# @desc    как символ, инструкция — размером метки за ней); разбор строки
-# @desc    (паритет с эталоном) — tests/test_l2_assemble_line.py,
-# @desc    проход 1 (таблица символов и адреса) — tests/test_l2_assemble_sym.py.
+# @desc    asmline.ubrk, asmsym.ubrk, asmcode.ubrk): сборка compile,
+# @desc    пустой вход и пустые строки молчат, чистка строки (концевые
+# @desc    CR, комментарий «;» вне кавычек, крайние пробелы и табуляции),
+# @desc    нумерация строк, буфер аргументов (256 пар DB/DW — норма,
+# @desc    257 — ошибка 16), границы лимита 512 КиБ, сквозной прогон
+# @desc    процессами; выход — образ UVM байт в байт (подшаг 6: метка
+# @desc    наблюдаема адресом ссылки, инструкция — байтами опкода
+# @desc    и imm64); разбор строки (паритет с эталоном) —
+# @desc    tests/test_l2_assemble_line.py, символы и адреса —
+# @desc    tests/test_l2_assemble_sym.py, кодирование значений —
+# @desc    tests/test_l2_assemble_code.py.
 
 """Тесты подшагов 1-2 ветви l2.uasm.assemble (SPEC/L4-SELFHOST.txt, раздел 5А).
 
@@ -23,10 +25,10 @@
 «вход слишком большой» и код 16 (границы — самые медленные тесты, около
 минуты на пару). Подшаг 2: пустые строки и комментарии молчат, концевые
 CR и комментарий «;» вне кавычек отрезаются, крайние пробелы
-игнорируются; 257-й аргумент DB/DW — ошибка 16. Выход прохода 1 —
-листинг символов «имя=значение» (подшаг 5): чистка и нумерация строк
-наблюдаемы через значения меток и номера строк ошибок; при ошибке
-прохода листинг не печатается — только диагностика.
+игнорируются; 257-й аргумент DB/DW — ошибка 16. Выход — образ UVM
+(подшаг 6): чистка и нумерация строк наблюдаемы байтами образа и
+номерами строк ошибок; при ошибке образ не выводится — только
+диагностика.
 """
 
 import os
@@ -37,14 +39,23 @@ import unittest
 
 from tests import uvm_testkit as tk
 from tools import ubrick_cli
+from tools.uasm_assemble import assemble
 from tools.uvm_table import TABLE
 
 SRC_LIMIT = 0x90000 - 0x10000     # ёмкость буфера источника: 512 КиБ
 BIG_TEXT = "вход слишком большой\n".encode("utf-8")   # диагностика без
                                                      # номера строки
 ARGS_TEXT = "слишком много аргументов"                 # ошибка ёмкости
-MNEMONICS = [rec[1] for rec in TABLE]                  # 38 мнемоник
-IMMS = {rec[1]: rec[3] for rec in TABLE}               # мнемоника -> imm64
+CODES = {rec[1]: rec[0] for rec in TABLE}              # мнемоника -> код
+
+
+# @method le(v) -> bytes
+# @in    v: int — слово 0..2^64-1
+# @out   raw: bytes — восемь байтов little-endian
+# @does  Кодирует поле imm64 и аргумент DW в ожиданиях тестов (SPEC/
+# @does  L2-UASM.txt, разделы 5-6).
+def le(v):
+    return v.to_bytes(8, "little")
 
 
 # @method repo_root() -> str
@@ -71,8 +82,8 @@ def l2_source():
 # @out   None — ошибка сборки (сообщение печатает cli в stderr)
 # @does  Собирает src/l2/assemble.ubrk настоящей командой ubrick_cli
 # @does  (режим compile, временный файл образа): use-включения asmmem,
-# @does  asmwords, asmmnem, asmlex, asmline и asmsym склеивает загрузчик
-# @does  ветви t0.ubrick.source; кирпич всех тестов ветви.
+# @does  asmwords, asmmnem, asmlex, asmline, asmsym и asmcode склеивает
+# @does  загрузчик ветви t0.ubrick.source; кирпич всех тестов ветви.
 # @depends ubrick_cli.main
 # @uses   sys.stderr — стандартный вывод ошибок хоста (через cli)
 def l2_image():
@@ -100,7 +111,8 @@ def feed(image, data):
 # @in    text: bytes — текст uAsm (вход ассемблера)
 # @out   pair: tuple — (код завершения, байты выхода)
 # @does  Прогон ассемблера на тексте одним вызовом (кирпич коротких
-# @does  проверек листинга символов); сборка образа — l2_image.
+# @does  проверек выхода — образ либо диагностика); сборка образа —
+# @does  l2_image.
 # @depends l2_image, feed
 def listing(text):
     return feed(l2_image(), text)
@@ -123,8 +135,8 @@ class TestCompile(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Компиляция src/l2/assemble.ubrk с use-включениями asmmem,
-    # @does  asmwords, asmmnem, asmlex, asmline и asmsym проходит без
-    # @does  ошибки (код 0), образ не пуст.
+    # @does  asmwords, asmmnem, asmlex, asmline, asmsym и asmcode
+    # @does  проходит без ошибки (код 0), образ не пуст.
     # @depends l2_image
     def test_image_built(self):
         image = l2_image()
@@ -138,8 +150,9 @@ class TestSilence(unittest.TestCase):
     # @method test_empty_input() -> None
     # @in    нет
     # @out   нет
-    # @does  Пустой вход — пустой вывод и код 0 (SPEC/L4-SELFHOST.txt,
-    # @does  раздел 5А): записей нет — символов нет.
+    # @does  Пустой вход — пустой образ и код 0 (SPEC/L2-UASM.txt,
+    # @does  раздел 7; SPEC/L4-SELFHOST.txt, раздел 5А): записей нет —
+    # @does  байтов нет.
     # @depends listing
     def test_empty_input(self):
         self.assertEqual(listing(b""), (0, b""))
@@ -147,9 +160,9 @@ class TestSilence(unittest.TestCase):
     # @method test_blank_lines() -> None
     # @in    нет
     # @out   нет
-    # @does  Пустые строки и строки-комментарии не попадают в проход:
-    # @does  символов нет, вывод пуст, код 0; нумерация последующих
-    # @does  строк не сбивается (ошибки — test_line_numbers).
+    # @does  Пустые строки и строки-комментарии не попадают в проходы:
+    # @does  байтов нет, вывод пуст, код 0; нумерация последующих строк
+    # @does  не сбивается (ошибки — test_line_numbers).
     # @depends listing
     def test_blank_lines(self):
         text = b"\n   \n; comment\n\t\n"
@@ -185,23 +198,24 @@ class TestLines(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Табуляция — разделитель слов наравне с пробелом: «PUSH\t1» —
-    # @does  инструкция с операндом, «DB\t1\t2» — директива с двумя
-    # @does  аргументами (иначе строка была бы одним словом — ошибка
-    # @does  «неизвестная мнемоника»); успех — пустой вывод (символов
-    # @does  нет), адреса записей — tests/test_l2_assemble_sym.py.
+    # @does  инструкция с операндом (байт опкода 0x01 и imm64 1),
+    # @does  «DB\t1\t2» — директива с двумя аргументами (байты 1 и 2;
+    # @does  иначе строка была бы одним словом — ошибка «неизвестная
+    # @does  мнемоника»).
     # @depends listing
     def test_tabs(self):
-        self.assertEqual(listing(b"PUSH\t1\n"), (0, b""))
-        self.assertEqual(listing(b"DB\t1\t2\n"), (0, b""))
+        self.assertEqual(listing(b"PUSH\t1\n"),
+                         (0, bytes([CODES["PUSH"]]) + le(1)))
+        self.assertEqual(listing(b"DB\t1\t2\n"), (0, b"\x01\x02"))
 
     # @method test_spaces_between_args() -> None
     # @in    нет
     # @out   нет
     # @does  Несколько пробелов между словами схлопываются: оба аргумента
-    # @does  DB — в одной записи (размер метки за ней — sym-файл).
+    # @does  DB — в одной записи (два байта образа).
     # @depends listing
     def test_spaces_between_args(self):
-        self.assertEqual(listing(b"DB  1   2\n"), (0, b""))
+        self.assertEqual(listing(b"DB  1   2\n"), (0, b"\x01\x02"))
 
     # @method test_word_shapes() -> None
     # @in    нет
@@ -224,20 +238,19 @@ class TestClean(unittest.TestCase):
     # @out   нет
     # @does  Концевой CR каждой строки снимается (как split_lines
     # @does  эталона): «x:\r» был бы словом с хвостом и дал бы ошибку
-    # @does  «неизвестная мнемоника», но метки определяются — x = 0,
-    # @does  y = 1 (NOP перед ней).
+    # @does  «неизвестная мнемоника», но метка определяется, NOP перед
+    # @does  меткой y кодируется байтом опкода 0x00.
     # @depends listing
     def test_crlf(self):
-        self.assertEqual(listing(b"x:\r\nNOP\r\ny:"),
-                         (0, b"x=0\ny=1\n"))
+        self.assertEqual(listing(b"x:\r\nNOP\r\ny:"), (0, b"\x00"))
 
     # @method test_trailing_crs() -> None
     # @in    нет
     # @out   нет
     # @does  Все концевые CR снимаются подряд («x:\r\r\n» — метка x);
     # @does  CR без LF внутри строки — значимый байт слова: «B\rC» —
-    # @does  слово целиком в сообщении ошибки; при ошибке прохода листинг
-    # @does  не печатается — только диагностика (проход 1, подшаг 5).
+    # @does  слово целиком в сообщении ошибки; при ошибке образ
+    # @does  не выводится — только диагностика.
     # @depends listing, err
     def test_trailing_crs(self):
         self.assertEqual(listing(b"x:\r\r\nB\rC\n"),
@@ -248,33 +261,31 @@ class TestClean(unittest.TestCase):
     # @out   нет
     # @does  Комментарий «;» вне кавычек отрезается до конца строки:
     # @does  «x: ; comment ; ;» — метка x без лишних слов (не отрезали —
-    # @does  была бы «плохое имя»); вывод — символ x = 0.
+    # @does  была бы «плохое имя»); метка байтов не даёт — образ пуст.
     # @depends listing
     def test_comment_cut(self):
-        self.assertEqual(listing(b"x: ; comment ; ;\n"),
-                         (0, b"x=0\n"))
+        self.assertEqual(listing(b"x: ; comment ; ;\n"), (0, b""))
 
     # @method test_semicolon_in_quotes() -> None
     # @in    нет
     # @out   нет
     # @does  «;» внутри литералов в кавычках комментарий не начинает:
-    # @does  литерал DS с «;» разбирается целиком — его длина 3 байта
-    # @does  сдвигает метку b (b = 3).
+    # @does  литерал DS с «;» кодируется целиком — три байта a, ;, b.
     # @depends listing
     def test_semicolon_in_quotes(self):
         self.assertEqual(listing(b'a:\nDS "a;b"\nb:\n'),
-                         (0, b"a=0\nb=3\n"))
+                         (0, b"a;b"))
 
     # @method test_spaces_in_quotes() -> None
     # @in    нет
     # @out   нет
-    # @does  Пробелы внутри литерала значимы: длина декодированных байтов
-    # @does  «a ; b» — 5 (литерал — остаток строки целиком, а не слова)
-    # @does  — метка b получает адрес 5.
+    # @does  Пробелы внутри литерала значимы: декодированные байты
+    # @does  «a ; b» — все пять (литерал — остаток строки целиком,
+    # @does  а не слова).
     # @depends listing
     def test_spaces_in_quotes(self):
         self.assertEqual(listing(b'a:\nDS "a ; b"\nb:\n'),
-                         (0, b"a=0\nb=5\n"))
+                         (0, b"a ; b"))
 
     # @method test_unclosed_quote() -> None
     # @in    нет
@@ -293,12 +304,11 @@ class TestClean(unittest.TestCase):
     # @out   нет
     # @does  Escape-кавычка внутри литерала не закрывает его: «;» после
     # @does  закрытия — комментарий, escape-последовательность цела;
-    # @does  декодированная длина — три байта (a, кавычка, b) — метка b
-    # @does  получает адрес 3.
+    # @does  декодированные байты — a, кавычка, b.
     # @depends listing
     def test_escaped_quote(self):
         self.assertEqual(listing(b'a:\nDS "a\\"b" ; x\nb:\n'),
-                         (0, b"a=0\nb=3\n"))
+                         (0, b'a"b'))
 
     # @method test_apostrophe_literal() -> None
     # @in    нет
@@ -337,34 +347,32 @@ class TestArgs(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  256 аргументов одной строки DB — норма: пары занимают буфер
-    # @does  аргументов целиком (argbase..arglimit), метка за директивой
-    # @does  получает адрес 256 — по байту на аргумент (SPEC/L2-UASM.txt,
-    # @does  раздел 7), код 0.
+    # @does  аргументов целиком (argbase..arglimit), проход 2 кодирует
+    # @does  по байту на аргумент — 256 байтов 7, код 0.
     # @depends listing
     def test_many_args_fit(self):
         line = "x:\nDB" + " 7" * 256 + "\ny:"
-        self.assertEqual(listing(line.encode()),
-                         (0, b"x=0\ny=256\n"))
+        self.assertEqual(listing(line.encode()), (0, b"\x07" * 256))
 
     # @method test_trailing_spaces_after_args() -> None
     # @in    нет
     # @out   нет
     # @does  Пробелы в конце строки после последнего аргумента не дают
     # @does  пустого 257-го слова (пробелы пропускаются до проверки
-    # @does  лимита) — норма, метка за директивой — адрес 256, код 0.
+    # @does  лимита) — норма, образ — 256 байтов 7, код 0.
     # @depends listing
     def test_trailing_spaces_after_args(self):
         line = "x:\nDB" + " 7" * 256
         self.assertEqual(listing(line.encode() + b"   \ny:"),
-                         (0, b"x=0\ny=256\n"))
+                         (0, b"\x07" * 256))
 
     # @method test_too_many_args() -> None
     # @in    нет
     # @out   нет
     # @does  257-й аргумент строки DB — ошибка ёмкости: «uAsm: строка 2:
     # @does  слишком много аргументов» и код 16 (SPEC/L4-SELFHOST.txt,
-    # @does  раздел 5А); при ошибке прохода листинг не печатается —
-    # @does  только диагностика.
+    # @does  раздел 5А); при ошибке образ не выводится — только
+    # @does  диагностика.
     # @depends listing, err
     def test_too_many_args(self):
         text = "NOP\nDB" + " 7" * 257
@@ -380,7 +388,7 @@ class TestLimit(unittest.TestCase):
     # @out   нет
     # @does  Вход ровно в 512 КиБ занимает буфер целиком (последний байт
     # @does  пишется в 0x8FFFF) — успех: одна строка-комментарий молчит,
-    # @does  вывод пуст, код 0; чистка комментария на огромной строке
+    # @does  образ пуст, код 0; чистка комментария на огромной строке
     # @does  не читает её целиком.
     # @depends listing
     def test_exact_fit(self):
@@ -407,9 +415,9 @@ class TestProcess(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Команды контракта настоящими процессами: ubrick_cli compile,
-    # @does  затем uvm_cli с входным файлом-текстом; stdout — листинг
-    # @does  символов: метка end после NOP (1), PUSH 1 (9) и HALT 0 (9)
-    # @does  получает адрес 19, код процесса 0.
+    # @does  затем uvm_cli с входным файлом-текстом; stdout — образ
+    # @does  программы NOP (байт 0x00), PUSH 1 (0x01 + imm64 1), HALT 0
+    # @does  (0x45 + imm64 0) — 19 байтов, код процесса 0.
     # @depends l2_source
     # @uses   subprocess — запуск инструментов настоящими процессами
     def test_process_run(self):
@@ -427,8 +435,10 @@ class TestProcess(unittest.TestCase):
                 run = subprocess.run(
                     [sys_python(), tools_path("uvm_cli.py"), image],
                     stdin=handle, capture_output=True)
+            image_want, error = assemble("NOP\nPUSH 1\nHALT 0\nend:\n")
+            self.assertIsNone(error)
             self.assertEqual(run.returncode, 0)
-            self.assertEqual(run.stdout, b"end=19\n")
+            self.assertEqual(run.stdout, image_want)
 
 
 # @method sys_python() -> str
