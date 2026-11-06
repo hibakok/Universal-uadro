@@ -17,7 +17,8 @@
           imm64); разбор строки (паритет с эталоном) —
           tests/test_l2_assemble_line.py, символы и адреса —
           tests/test_l2_assemble_sym.py, кодирование значений —
-          tests/test_l2_assemble_code.py.
+          tests/test_l2_assemble_code.py, золотой набор и закрытие ветви
+          — tests/test_l2_assemble_gold.py.
 
 МЕТОД le(v) -> bytes
   вход:        v: int — слово 0..2^64-1
