@@ -4,8 +4,11 @@
 # @branch  t0.infra.registry
 # @desc    Сканер реестра методов: чтение исходников, план (ветви и имена
 # @desc    карточек), запись и сверка registry/ на диске; рендер текстов —
-# @desc    tools/registry_render.py. Режим --check сверяет реестр
-# @desc    без записи.
+# @desc    tools/registry_render.py. Страховка целостности источников:
+# @desc    карточка без @does и файл без перевода строки в конце —
+# @desc    признаки оборванного при переносе файла, генерация и сверка
+# @desc    реестра на них падают (видно в CI первым шагом). Режим --check
+# @desc    сверяет реестр без записи.
 
 """Сканер реестра методов репозитория (ветвь t0.infra.registry).
 
@@ -15,6 +18,13 @@ SPEC/L4-SELFHOST.txt, раздел 3). План назначает каждом�
 имя файла карточек и относительный путь; рендер файлов реестра —
 tools/registry_render.py (индекс registry/METHODS.txt, индексы ветвей
 registry/<ветвь>/INDEX.txt, карточки registry/<ветвь>/<файл>.txt).
+
+Страховка целостности источников: карточка метода без строк @does
+и файл без перевода строки в конце — признаки оборванного при переносе
+файла (полный текст терял хвост при копировании через чат, обрыв
+оставался синтаксически валидным и проходил тесты молча). Оба дефекта
+ловятся до генерации реестра: генерация и сверка падают с кодом 1
+и списком файлов — CI показывает это первым шагом.
 
 Реестр — простой текст UTF-8 без разметки Markdown (.md запрещены).
 Запуск:
@@ -150,6 +160,52 @@ def read_entries():
     return entries
 
 
+# @method card_gaps(entries) -> list
+# @in    entries: list[dict] — элементы реестра (path, header, cards)
+# @out   problems: list[str] — описания карточек без поля @does
+# @does  Страховка целостности источников: карточка метода обязана
+# @does  описывать функцию (@does, DOC/CONVENTIONS.txt); карточка без
+# @does  неё означает оборванный файл — обрыв на середине карточки.
+# @does  Пустой список — дыр нет; кирпич main: генерация и сверка
+# @does  реестра падают на такой источник.
+# @depends rel_path
+def card_gaps(entries):
+    problems = []
+    for entry in entries:
+        for card in entry["cards"]:
+            if not card["does"]:
+                problems.append("карточка без @does: %s — %s"
+                                % (rel_path(entry), card["name"]))
+    return problems
+
+
+# @method unfinished_sources(entries) -> list
+# @in    entries: list[dict] — элементы реестра (path, header, cards)
+# @out   problems: list[str] — пути источников без перевода строки в конце
+# @does  Страховка целостности: файл обязан заканчиваться переводом
+# @does  строки (DOC/CONVENTIONS.txt, формат файлов) — обрыв последней
+# @does  строки виден сразу; пустой файл и завершённый файл проходят,
+# @does  путь в сообщении — относительно корня репозитория.
+def unfinished_sources(entries):
+    problems = []
+    for entry in entries:
+        data = entry["path"].read_bytes()
+        if data and not data.endswith(b"\n"):
+            problems.append("нет перевода строки в конце: " + rel_path(entry))
+    return problems
+
+
+# @method source_problems(entries) -> list
+# @in    entries: list[dict] — элементы реестра
+# @out   problems: list[str] — все признаки оборванных источников
+# @does  Собирает страховки целостности: карточки без @does
+# @does  и файлы без концевого перевода строки; пустой список —
+# @does  источники целы; кирпич main.
+# @depends card_gaps, unfinished_sources
+def source_problems(entries):
+    return card_gaps(entries) + unfinished_sources(entries)
+
+
 # @method branch_of(entry) -> str
 # @in    entry: dict — элемент реестра (path, header, cards)
 # @out   branch: str — имя ветви или no-branch, если в шапке нет ветви
@@ -161,9 +217,10 @@ def branch_of(entry):
 # @method rel_path(entry) -> str
 # @in    entry: dict — элемент реестра (path, header, cards)
 # @out   rel: str — путь файла относительно корня репозитория
-# @does  Преобразует путь в POSIX-вид для плана реестра.
+# @does  Преобразует путь в POSIX-вид для плана реестра; пути вне корня
+# @does  (временные файлы тестов) дают путь с ".." — кирпич не падает.
 def rel_path(entry):
-    return entry["path"].relative_to(ROOT).as_posix()
+    return Path(os.path.relpath(entry["path"], ROOT)).as_posix()
 
 
 # @method card_name_for(entry, used) -> str
@@ -269,11 +326,23 @@ def write_registry(files):
 
 # @method main(argv) -> int
 # @in    argv: list[str] — аргументы командной строки
-# @out   code: int — 0 — успех; 1 — реестр устарел (только для --check)
-# @does  Без --check записывает реестр; с --check сверяет без записи.
-# @depends scan_repository, check_registry, write_registry
+# @out   code: int — 0 — успех; 1 — оборванный источник либо (для
+# @out   --check) устаревший реестр
+# @does  Сначала страховка целостности источников: карточки без @does
+# @does  и файлы без концевого перевода строки падают с кодом 1 до
+# @does  генерации — обрыв виден в CI первым шагом. Без --check
+# @does  записывает реестр; с --check сверяет без записи.
+# @depends read_entries, source_problems, plan_registry,
+# @depends render.render_all, check_registry, write_registry
 def main(argv):
-    files = scan_repository()
+    entries = read_entries()
+    problems = source_problems(entries)
+    for line in problems:
+        print(line)
+    if problems:
+        print("ОБОРВАННЫЙ ИСТОЧНИК: восстановите файл целиком и повторите")
+        return 1
+    files = render.render_all(plan_registry(entries))
     if "--check" in argv:
         problems = check_registry(files)
         for line in problems:
