@@ -53,9 +53,12 @@ import unittest
 from tests import test_l1_emu_jump as ej
 from tests import uvm_testkit as tk
 from tools.uasm_assemble import assemble
-from tools.uvm_table import TABLE
-
-OPCODE = {rec[1]: rec[0] for rec in TABLE}  # мнемоника -> код (раздел 5)
+# Собственный эмулятор пишется под ISA v0.2 (SPEC/L4-SELFHOST.txt,
+# раздел 2): опкоды — из кирпича isa_v02_table, а не из полной таблицы
+# эталона (уже с DEVRD/DEVWR v0.3); собственному эмулятору они
+# приходят подшагом 5.4 (ROADMAP.txt, Этап 5).
+V02 = tk.isa_v02_table()                     # ISA v0.2 — 38 опкодов
+OPCODE = {rec[1]: rec[0] for rec in V02}  # мнемоника -> код (раздел 5)
 EOF_WORD = 2 ** 64 - 1                      # признак конца ввода SYS 0
 GRAM_SIZE = 0x80000                         # ОЗУ гостя — 512 КиБ
 DS_WORDS = 256                              # ёмкость DS гостя (раздел 5Б)
@@ -283,13 +286,13 @@ class TestGoldenSet(unittest.TestCase):
     # @in    нет
     # @out   нет
     # @does  Страховка полноты набора (SPEC, раздел 6): программы покрывают
-    # @does  все 38 мнемоник таблицы опкодов v0.1 без пропусков и повторов,
-    # @does  ловушки — все коды 1-8.
-    # @depends OPCODE_CASES, TRAP_CASES, TABLE
+    # @does  все 38 мнемоник ISA v0.2 без пропусков и повторов
+    # @does  (кирпич isa_v02_table), ловушки — все коды 1-8.
+    # @depends OPCODE_CASES, TRAP_CASES, V02
     def test_set_completeness(self):
-        self.assertEqual(len(OPCODE_CASES), len(TABLE))
+        self.assertEqual(len(OPCODE_CASES), len(V02))
         self.assertEqual({row[0] for row in OPCODE_CASES},
-                         {rec[1] for rec in TABLE})
+                         {rec[1] for rec in V02})
         self.assertEqual([row[0] for row in TRAP_CASES], list(range(1, 9)))
 
 
