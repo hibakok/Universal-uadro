@@ -38,9 +38,12 @@ import unittest
 from tests import uvm_testkit as tk
 from tools import ubrick_cli
 from tools.uasm_assemble import assemble
-from tools.uvm_table import TABLE
-
-CODES = {rec[1]: rec[0] for rec in TABLE}   # мнемоника -> код
+# Собственный ассемблер пишется под ISA v0.2 (SPEC/L4-SELFHOST.txt,
+# раздел 2): мнемоники — из кирпича isa_v02_table, а не из полной
+# таблицы эталона (уже с DEVRD/DEVWR v0.3); собственному ассемблеру
+# они приходят подшагом 5.4 (ROADMAP.txt, Этап 5).
+V02 = tk.isa_v02_table()                    # ISA v0.2 — 38 опкодов
+CODES = {rec[1]: rec[0] for rec in V02}   # мнемоника -> код
 
 
 # @method repo_root() -> str
