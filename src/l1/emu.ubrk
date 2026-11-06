@@ -6,24 +6,27 @@
 ; @desc    гостя в stdin (KEY), выход — вывод программы гостя (EMIT),
 ; @desc    код завершения — код гостя: imm HALT по модулю 256 либо код
 ; @desc    ловушки 1-8 (SPEC/L4-SELFHOST.txt, разделы 4 и 5Б). Подшаги
-; @desc    1-4: раскладка и чтение образа гостя (mem.ubrk: ловушка 7 при
+; @desc    1-6: раскладка и чтение образа гостя (mem.ubrk: ловушка 7 при
 ; @desc    входе длиннее 512 КиБ — код 7, вывод пуст), клетки машины
 ; @desc    гостя (greset), декодер (dec.ubrk: шесть диапазонов, поле
 ; @desc    imm64, ловушки 6/7), дерево диапазонов (tab.ubrk) и цикл
-; @desc    «decode dispatch»: обработчики NOP и группы «стек» целиком
-; @desc    (opsstack.ubrk: PUSH/DROP/DUP/SWAP/OVER/ROT/PICK — кирпичи
-; @desc    gpush/gpop/gpick, ловушки 2/3), группы «память» (opsmem.ubrk:
-; @desc    LOAD8/LOAD64/STORE8/STORE64 — gloadbyte/gloadword/gstorebyte/
-; @desc    gstoreword, ловушка 7) и HALT (opsjump.ubrk); rpush/rpop
-; @desc    (ловушки 4/5) ждут обработчиков CALL/RET (подшаг 6); арифметика
-; @desc    и сравнения, переходы и SYS-мост — ловушка 6 (заготовка
-; @desc    подшагов 5-6); use-включения — SPEC/L3-UBRICK.txt, раздел 3.
+; @desc    «decode dispatch»: обработчики всех 38 опкодов v0.1 — группы
+; @desc    «стек» (opsstack.ubrk), «память» (opsmem.ubrk), «арифметика»
+; @desc    (opsarith.ubrk), «сравнения» (opscmp.ubrk), «переходы»
+; @desc    (opsjump.ubrk: JMP/JZ/JNZ/CALL/RET — кирпичи rpush/rpop)
+; @desc    и SYS-мост (opssys.ubrk: SYS 0/1/2, прочий номер — ловушка 8);
+; @desc    остаются подшаги 7 (золотой набор и сквозной прогон —
+; @desc    SPEC/L4-SELFHOST.txt, разделы 5Б и 6); use-включения —
+; @desc    SPEC/L3-UBRICK.txt, раздел 3.
 use mem.ubrk
 use dec.ubrk
 use tab.ubrk
 use opsstack.ubrk
 use opsmem.ubrk
+use opsarith.ubrk
+use opscmp.ubrk
 use opsjump.ubrk
+use opssys.ubrk
 
 ; @method imgstep ( cur -- cur' done )
 ; @in    cur: слово — адрес узла следующего байта образа гостя
@@ -56,11 +59,11 @@ use opsjump.ubrk
 ; @does  (SPEC/L0-UVM.txt, раздел 2), затем цикл инструкций — шаг decode
 ; @does  (dec.ubrk: код, поле imm64, gpc — за инструкцией) + dispatch
 ; @does  (tab.ubrk: дерево диапазонов, CALL обработчика) до STOP
-; @does  обработчика — HALT imm либо ловушка гостя; подшаги 5-6 добавят
-; @does  арифметику и сравнения, переходы и SYS-мост (пока ловушка 6;
-; @does  SYS 1 гостя — EMIT, SYS 0 — всегда EOF: stdin инструмента
-; @does  израсходован образом); цикл не завершается сам — только STOP
-; @does  (BEGIN AGAIN).
+; @does  обработчика — HALT imm, SYS 2 либо ловушка гостя; подшаги 5-6
+; @does  добавили арифметику и сравнения, переходы и SYS-мост — все
+; @does  группы опкодов исполняются; SYS 1 гостя — EMIT, SYS 0 — всегда
+; @does  EOF: stdin инструмента израсходован образом); цикл
+; @does  не завершается сам — только STOP (BEGIN AGAIN).
 ; @depends grambase, imgstep, DROP, greset, decode, dispatch, BEGIN,
 ; @depends UNTIL, AGAIN
 : main
