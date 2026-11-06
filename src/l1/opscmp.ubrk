@@ -1,0 +1,80 @@
+; @uadro
+; @file    src/l1/opscmp.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — обработчики группы «сравнения» 0x30-0x35 (SPEC/
+; @desc    L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
+; @desc    подшаг 5 — EQ, NEQ, LTU, GTU, LEU, GEU: gpop снимает пару
+; @desc    слов гостя, сравнение узла даёт флаг 1/0, gpush кладёт флаг
+; @desc    в DS гостя; сравнения беззнаковые (слова — целые без знака),
+; @desc    EQ/NEQ коммутативны (без SWAP), порядок остальных — SWAP:
+; @desc    после gpop gpop на стеке узла [b, a] (a — вершина), SWAP
+; @desc    даёт порядок ( a b ); имена — мнемоники строчными.
+
+; @method eq ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; флаг 1/0 лежит в DS гостя
+; @does  Обработчик EQ 0x30 (эффект ( a b -- ф )): gpop снимает оба
+; @does  слова гостя (меньше двух — ловушка 2), EQ узла даёт 1 при
+; @does  равенстве, иначе 0 (коммутативно — без SWAP), gpush кладёт
+; @does  флаг (как op_eq и push_flag эталона, t0.uvm.ops); кирпич dcmp
+; @does  (tab.ubrk).
+; @depends gpop, EQ, gpush
+: eq
+  gpop gpop EQ gpush ;
+
+; @method neq ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; флаг 1/0 лежит в DS гостя
+; @does  Обработчик NEQ 0x31 (эффект ( a b -- ф )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), NEQ узла даёт 1 при неравенстве,
+; @does  иначе 0 (коммутативно — без SWAP), gpush кладёт флаг (как
+; @does  op_neq эталона); кирпич dcmp (tab.ubrk).
+; @depends gpop, NEQ, gpush
+: neq
+  gpop gpop NEQ gpush ;
+
+; @method ltu ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; флаг 1/0 лежит в DS гостя
+; @does  Обработчик LTU 0x32 (эффект ( a b -- ф )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP ставит пару в порядок
+; @does  ( a b ) — сравнение некоммутативно, LTU узла даёт 1 при
+; @does  беззнаковом a < b, gpush кладёт флаг (как op_ltu эталона);
+; @does  кирпич dcmp (tab.ubrk).
+; @depends gpop, SWAP, LTU, gpush
+: ltu
+  gpop gpop SWAP LTU gpush ;
+
+; @method gtu ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; флаг 1/0 лежит в DS гостя
+; @does  Обработчик GTU 0x33 (эффект ( a b -- ф )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP даёт порядок ( a b ),
+; @does  GTU узла даёт 1 при беззнаковом a > b, gpush кладёт флаг (как
+; @does  op_gtu эталона); кирпич dcmp (tab.ubrk).
+; @depends gpop, SWAP, GTU, gpush
+: gtu
+  gpop gpop SWAP GTU gpush ;
+
+; @method leu ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; флаг 1/0 лежит в DS гостя
+; @does  Обработчик LEU 0x34 (эффект ( a b -- ф )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP даёт порядок ( a b ),
+; @does  LEU узла даёт 1 при беззнаковом a <= b, gpush кладёт флаг (как
+; @does  op_leu эталона); кирпич dcmp (tab.ubrk).
+; @depends gpop, SWAP, LEU, gpush
+: leu
+  gpop gpop SWAP LEU gpush ;
+
+; @method geu ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; флаг 1/0 лежит в DS гостя
+; @does  Обработчик GEU 0x35 (эффект ( a b -- ф )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP даёт порядок ( a b ),
+; @does  GEU узла даёт 1 при беззнаковом a >= b, gpush кладёт флаг (как
+; @does  op_geu эталона); кирпич dcmp (tab.ubrk).
+; @depends gpop, SWAP, GEU, gpush
+: geu
+  gpop gpop SWAP GEU gpush ;
