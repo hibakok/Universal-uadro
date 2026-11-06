@@ -31,12 +31,15 @@ from tools.uvm_exec import step
 # @does  Исполняет инструкции циклом step до остановки: UvmHalt и UvmTrap
 # @does  прекращают цикл, их поле code возвращается как код завершения;
 # @does  машина после остановки не сбрасывается (стеки, ОЗУ и PC доступны
-# @does  вызывающему).
+# @does  вызывающему). Горячий путь: step привязывается локальной
+# @does  переменной — поиск имени в глобалах на каждую инструкцию
+# @does  исчезает, поведение то же.
 # @depends step
 def run(m):
+    step_local = step
     try:
         while True:
-            step(m)
+            step_local(m)
     except (UvmHalt, UvmTrap) as stop:
         return stop.code
 
