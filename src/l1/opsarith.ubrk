@@ -1,0 +1,169 @@
+; @uadro
+; @file    src/l1/opsarith.ubrk
+; @layer   L1
+; @branch  l1.uvm.emu
+; @desc    Эмулятор UVM — обработчики группы «арифметика» 0x20-0x2C (SPEC/
+; @desc    L0-UVM.txt, раздел 5; SPEC/L4-SELFHOST.txt, раздел 5Б):
+; @desc    подшаг 5 — ADD, SUB, MUL, UDIV, UMOD, NEG, SHL, SHR, SAR, AND,
+; @desc    OR, XOR, INV. Бинарные снимают два слова стека гостя (gpop),
+; @desc    вычисляют на стеке узла примитивами uBrick (та же семантика
+; @desc    по модулю 2^64), кладут результат обратно (gpush); делитель 0
+; @desc    у UDIV/UMOD — ловушка 1 гостя; имена обработчиков — мнемоники
+; @desc    строчными. Коммутативные операции идут без SWAP (порядок
+; @desc    операндов не важен), некоммутативные — SWAP: после gpop gpop
+; @desc    на стеке узла [b, a] (a — вершина), SWAP даёт порядок ( a b ).
+
+; @method add ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; сумма a+b лежит в DS гостя
+; @does  Обработчик ADD 0x20 (эффект ( a b -- a+b )): gpop снимает оба
+; @does  слова гостя (меньше двух — ловушка 2), ADD узла складывает
+; @does  по модулю 2^64 (коммутативна — без SWAP), gpush кладёт сумму
+; @does  (как op_add эталона, t0.uvm.ops); кирпич darith (tab.ubrk).
+; @depends gpop, ADD, gpush
+: add
+  gpop gpop ADD gpush ;
+
+; @method sub ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; разность a-b лежит в DS гостя
+; @does  Обработчик SUB 0x21 (эффект ( a b -- a-b )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP ставит пару в порядок
+; @does  ( a b ) — вычитание некоммутативно, SUB узла даёт a-b по модулю
+; @does  2^64, gpush кладёт разность (как op_sub эталона); кирпич darith
+; @does  (tab.ubrk).
+; @depends gpop, SWAP, SUB, gpush
+: sub
+  gpop gpop SWAP SUB gpush ;
+
+; @method mul ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; младшие 64 бита произведения лежат в DS гостя
+; @does  Обработчик MUL 0x22 (эффект ( a b -- a*b )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), MUL узла даёт младшие 64 бита
+; @does  произведения (коммутативна — без SWAP), gpush кладёт результат
+; @does  (как op_mul эталона); кирпич darith (tab.ubrk).
+; @depends gpop, MUL, gpush
+: mul
+  gpop gpop MUL gpush ;
+
+; @method udiv ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; частное a/b лежит в DS гостя; делитель 0 — ловушка 1
+; @does  Обработчик UDIV 0x23 (эффект ( a b -- a/b )): gpop снимает оба
+; @does  слова гостя (меньше двух — ловушка 2) — при ловушке деления
+; @does  оба уже сняты, как у эталона (ds_pop2 прежде trap), SWAP ставит
+; @does  пару в порядок ( a b ), делитель b = 0 — ловушка 1 гостя (STOP
+; @does  с кодом 1, как TRAP_DIV0 эталона), иначе UDIV узла даёт целое
+; @does  частное, gpush кладёт его (как op_udiv эталона); кирпич darith
+; @does  (tab.ubrk).
+; @depends gpop, SWAP, DUP, EQ, IF, STOP, THEN, UDIV, gpush
+: udiv
+  gpop gpop SWAP DUP 0 EQ
+  IF 1 STOP THEN
+  UDIV gpush ;
+
+; @method umod ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; остаток a%b лежит в DS гостя; делитель 0 — ловушка 1
+; @does  Обработчик UMOD 0x24 (эффект ( a b -- a%b )): как udiv — gpop
+; @does  снимает оба слова (меньше двух — ловушка 2), SWAP даёт порядок
+; @does  ( a b ), делитель 0 — ловушка 1 гостя (STOP с кодом 1), иначе
+; @does  UMOD узла даёт остаток, gpush кладёт его (как op_umod эталона);
+; @does  кирпич darith (tab.ubrk).
+; @depends gpop, SWAP, DUP, EQ, IF, STOP, THEN, UMOD, gpush
+: umod
+  gpop gpop SWAP DUP 0 EQ
+  IF 1 STOP THEN
+  UMOD gpush ;
+
+; @method neg ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово 0-a лежит в DS гостя
+; @does  Обработчик NEG 0x25 (эффект ( a -- 0-a )): gpop снимает слово
+; @does  гостя (пустой стек — ловушка 2), NEG узла даёт арифметическое
+; @does  отрицание по модулю 2^64, gpush кладёт результат (как op_neg
+; @does  эталона); кирпич darith (tab.ubrk).
+; @depends gpop, NEG, gpush
+: neg
+  gpop NEG gpush ;
+
+; @method shl ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово a<<n лежит в DS гостя
+; @does  Обработчик SHL 0x26 (эффект ( a n -- a<<n )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP ставит пару в порядок
+; @does  ( a n ) — сдвиг некоммутативен, SHL узла сдвигает влево
+; @does  (счётчик усекается до 0..63 самим примитивом), gpush кладёт
+; @does  результат (как op_shl эталона); кирпич darith (tab.ubrk).
+; @depends gpop, SWAP, SHL, gpush
+: shl
+  gpop gpop SWAP SHL gpush ;
+
+; @method shr ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово a>>n (логически) лежит в DS гостя
+; @does  Обработчик SHR 0x27 (эффект ( a n -- a>>n )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP даёт порядок ( a n ),
+; @does  SHR узла сдвигает вправо логически (счётчик усекается до 0..63
+; @does  примитивом), gpush кладёт результат (как op_shr эталона);
+; @does  кирпич darith (tab.ubrk).
+; @depends gpop, SWAP, SHR, gpush
+: shr
+  gpop gpop SWAP SHR gpush ;
+
+; @method sar ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово a>>n (по знаку) лежит в DS гостя
+; @does  Обработчик SAR 0x28 (эффект ( a n -- a>>n )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), SWAP даёт порядок ( a n ),
+; @does  SAR узла сдвигает вправо арифметически по знаку (счётчик
+; @does  усекается до 0..63 примитивом), gpush кладёт результат (как
+; @does  op_sar эталона); кирпич darith (tab.ubrk).
+; @depends gpop, SWAP, SAR, gpush
+: sar
+  gpop gpop SWAP SAR gpush ;
+
+; @method and ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово a&b лежит в DS гостя
+; @does  Обработчик AND 0x29 (эффект ( a b -- a&b )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), AND узла даёт побитовое И
+; @does  (коммутативно — без SWAP), gpush кладёт результат (как op_and
+; @does  эталона); кирпич darith (tab.ubrk).
+; @depends gpop, AND, gpush
+: and
+  gpop gpop AND gpush ;
+
+; @method or ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово a|b лежит в DS гостя
+; @does  Обработчик OR 0x2A (эффект ( a b -- a|b )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), OR узла даёт побитовое ИЛИ
+; @does  (коммутативно — без SWAP), gpush кладёт результат (как op_or
+; @does  эталона); кирпич darith (tab.ubrk).
+; @depends gpop, OR, gpush
+: or
+  gpop gpop OR gpush ;
+
+; @method xor ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово a^b лежит в DS гостя
+; @does  Обработчик XOR 0x2B (эффект ( a b -- a^b )): gpop снимает оба
+; @does  слова (меньше двух — ловушка 2), XOR узла даёт исключающее ИЛИ
+; @does  (коммутативно — без SWAP), gpush кладёт результат (как op_xor
+; @does  эталона); кирпич darith (tab.ubrk).
+; @depends gpop, XOR, gpush
+: xor
+  gpop gpop XOR gpush ;
+
+; @method inv ( -- )
+; @in    нет (gpc уже переведён декодером за инструкцию)
+; @out   нет; слово ~a лежит в DS гостя
+; @does  Обработчик INV 0x2C (эффект ( a -- ~a )): gpop снимает слово
+; @does  гостя (пустой стек — ловушка 2), INV узла даёт побитовую
+; @does  инверсию, gpush кладёт результат (как op_inv эталона); кирпич
+; @does  darith (tab.ubrk).
+; @depends gpop, INV, gpush
+: inv
+  gpop INV gpush ;
